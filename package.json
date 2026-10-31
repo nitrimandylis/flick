@@ -1,0 +1,43 @@
+{
+  "name": "@nitrimandylis/flick",
+  "version": "0.1.0",
+  "description": "Search a film, pick a torrent, watch it now. Or watch it together, in sync, from two places.",
+  "license": "MIT",
+  "author": "Nick Trimandylis",
+  "type": "module",
+  "bin": {
+    "flick": "dist/flick.js"
+  },
+  "files": ["dist", "man", "flick-cli"],
+  "engines": {
+    "node": ">=20"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nitrimandylis/flick.git"
+  },
+  "scripts": {
+    "build": "bun build src/cli.tsx --target=node --packages=external --outfile dist/flick.js",
+    "dev": "bun src/cli.tsx",
+    "test": "bun test src",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "dependencies": {
+    "cloudflared": "^0.7.3",
+    "ink": "^8.0.0",
+    "react": "^19.3.1",
+    "webtorrent": "^3.0.21",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "typescript": "^7.0.2"
+  },
+  "trustedDependencies": [
+    "cloudflared",
+    "node-datachannel",
+    "utp-native"
+  ]
+}
