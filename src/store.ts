@@ -98,12 +98,12 @@ export function touchFilm(folderName: string) {
 
 /** Delete the least recently watched films until the cache is under its cap.
  *  `keep` is the folder about to play, never deleted. Returns what was removed. */
-export function trimCache(capGB: number, keep?: string): string[] {
-  if (!existsSync(FILMS_DIR)) return [];
+export function trimCache(capGB: number, keep?: string, dir = FILMS_DIR): string[] {
+  if (!existsSync(dir)) return [];
   const cap = capGB * 1024 ** 3;
-  const films = readdirSync(FILMS_DIR)
+  const films = readdirSync(dir)
     .map((name) => {
-      const path = join(FILMS_DIR, name);
+      const path = join(dir, name);
       const info = statSync(path);
       return { name, path, at: info.mtimeMs, bytes: info.isDirectory() ? folderSize(path) : info.size };
     })
