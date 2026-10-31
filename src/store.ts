@@ -20,6 +20,9 @@ export type Config = {
   player?: "iina" | "mpv" | "vlc" | "browser"; // unset: the first one installed
   cacheGB?: number; // unset: 10
   dub?: boolean; // anime: prefer dual-audio releases
+  room?: string; // couch: this computer's room id, made on first use
+  tunnelToken?: string; // couch: a named Cloudflare tunnel's token (secret; set it yourself)
+  tunnelHost?: string; // couch: the named tunnel's address, e.g. couch.example.com
 };
 
 function readJson<T>(path: string, fallback: T): T {

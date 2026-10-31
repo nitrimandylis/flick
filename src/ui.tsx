@@ -8,8 +8,9 @@ import type { Engine } from "./engines.ts";
 import type { PlayerName } from "./players.ts";
 import { loadHistory, type Watched } from "./store.ts";
 import { details, episodes, isSeries, searchTitles, seasons, sxxeyy, trending, type Episode, type Title } from "./titles.ts";
-import { findSources, hashOf, humanSize, magnetFromHash, qualityLabel, type Torrent, type Wanted } from "./torrents.ts";
+import { browserPlayable, findSources, hashOf, humanSize, magnetFromHash, qualityLabel, type Torrent, type Wanted } from "./torrents.ts";
 import { watch, type Progress, type Session } from "./watch.ts";
+import type { Couch } from "./couch.ts";
 
 const C = {
   accent: "#3DF5FF", // couch's cyan
@@ -32,7 +33,7 @@ type Screen =
   | { kind: "sources"; wanted: Wanted; label: string; episodeTag?: string; torrents: Torrent[] | null; offline: string[] }
   | { kind: "playing"; label: string; status: string; progress: Progress | null; error: string | null };
 
-export function App(props: { engine: Engine; player: PlayerName; cacheGB: number; dub: boolean; initialQuery: string }) {
+export function App(props: { engine: Engine; player: PlayerName; cacheGB: number; dub: boolean; initialQuery: string; couch?: Couch }) {
   const { exit } = useApp();
   const { rows: height } = useWindowSize();
   const [query, setQuery] = useState(props.initialQuery);
@@ -43,6 +44,16 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   const [showHelp, setShowHelp] = useState(false);
   const session = useRef<Session | null>(null);
   const searchId = useRef(0);
+  const couch = props.couch;
+  const [, redraw] = useState(0);
+
+  // couch mode: redraw when the room changes (tunnel up, someone joins, bytes sent)
+  useEffect(() => {
+    if (!couch) return;
+    couch.onUpdate = () => redraw((n) => n + 1);
+    const timer = setInterval(() => redraw((n) => n + 1), 2000);
+    return () => clearInterval(timer);
+  }, [couch]);
 
   // ---------- loading lists ----------
 
@@ -74,6 +85,11 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   }, [query]);
 
   async function openTitle(title: Title) {
+    if (couch && isSeries(title)) {
+      setBusy("couch plays films only: TV releases are rarely files every browser can play");
+      setTimeout(() => setBusy(""), 3500);
+      return;
+    }
     if (!isSeries(title)) return openSources({ kind: "film", title }, `${title.name}${title.year ? ` (${title.year})` : ""}`);
     setBusy(`loading ${title.name}…`);
     const anime = await findAnime(title.name);
@@ -94,13 +110,29 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
     setScreen({ kind: "sources", wanted, label, episodeTag, torrents: null, offline: [] });
     setSelected(0);
     const report = await findSources(wanted);
-    setScreen({ kind: "sources", wanted, label, episodeTag, torrents: report.torrents, offline: report.offline });
+    // couch: only files every browser plays (MP4 with H.264)
+    const torrents = couch ? report.torrents.filter((t) => browserPlayable(t.name)) : report.torrents;
+    setScreen({ kind: "sources", wanted, label, episodeTag, torrents, offline: report.offline });
   }
 
   async function startWatching(torrent: Torrent, title: Title | null, label: string, episode?: { season: number; number: number; tag: string }) {
     setScreen({ kind: "playing", label, status: "starting…", progress: null, error: null });
     const update = (change: Partial<Extract<Screen, { kind: "playing" }>>) =>
       setScreen((s) => (s.kind === "playing" ? { ...s, ...change } : s));
+    if (couch) {
+      if (!title) return update({ error: "couch needs a film picked from search (it shows its details at the end)" });
+      try {
+        await couch.play(props.engine, title, torrent, (status) => update({ status }));
+        const timer = setInterval(async () => {
+          const progress = await couch.progress();
+          if (progress) update({ progress });
+          else clearInterval(timer);
+        }, 2000);
+      } catch (error) {
+        update({ error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
     try {
       const current = await watch({
         title,
@@ -143,7 +175,10 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
     if (screen.kind === "playing") {
       if (key.escape || input === "q" || key.return) {
-        if (session.current) session.current.stop();
+        if (couch) {
+          couch.stopFilm(); // the room keeps its place; the torrent stops
+          setScreen({ kind: "browse" });
+        } else if (session.current) session.current.stop();
         else setScreen({ kind: "browse" }); // it failed to start: go back
       }
       return;
@@ -206,6 +241,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
   async function quit() {
     session.current?.stop();
+    await couch?.close(); // the tunnel and the room go with flick
     await props.engine.shutdown(); // no torrent keeps seeding after flick closes
     exit();
   }
@@ -219,8 +255,12 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
       : screen.kind === "episodes"
         ? "←→ season · ↑↓ episode · ⏎ sources · esc back"
         : screen.kind === "sources"
-          ? "↑↓ move · ⏎ play · esc back"
-          : "⏎ or esc stops the film";
+          ? couch
+            ? "↑↓ move · ⏎ put it on in the room · esc back"
+            : "↑↓ move · ⏎ play · esc back"
+          : couch
+            ? "esc takes the film off (the room keeps its place)"
+            : "⏎ or esc stops the film";
 
   return (
     <Box flexDirection="column" paddingX={1} height={height}>
@@ -232,9 +272,20 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
             </Text>
           ))}
         </Box>
-        <Text color={C.mute}>
-          {props.engine.name} · {props.player}
-        </Text>
+        {couch ? (
+          <Box flexDirection="column" alignItems="flex-end">
+            <Text color={couch.error ? C.bad : C.accent}>
+              {couch.error ? `couch: ${couch.error}` : couch.link ? couch.link : "couch · opening the room…"}
+            </Text>
+            <Text color={C.mute}>
+              {couch.room.people().length ? `in the room: ${couch.room.people().join(", ")}` : "nobody in the room yet"} · {props.engine.name}
+            </Text>
+          </Box>
+        ) : (
+          <Text color={C.mute}>
+            {props.engine.name} · {props.player}
+          </Text>
+        )}
       </Box>
 
       <Box marginTop={1} borderStyle="round" borderColor={screen.kind === "browse" ? C.accent : C.mute} paddingX={1}>
@@ -250,8 +301,8 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
         {showHelp ? <Help /> : null}
         {!showHelp && screen.kind === "browse" ? <TitleList rows={rows} selected={selected} height={listHeight} /> : null}
         {!showHelp && screen.kind === "episodes" ? <EpisodeList screen={screen} selected={selected} height={listHeight} /> : null}
-        {!showHelp && screen.kind === "sources" ? <SourceList screen={screen} selected={selected} height={listHeight} /> : null}
-        {!showHelp && screen.kind === "playing" ? <Playing screen={screen} /> : null}
+        {!showHelp && screen.kind === "sources" ? <SourceList screen={screen} selected={selected} height={listHeight} couch={Boolean(couch)} /> : null}
+        {!showHelp && screen.kind === "playing" ? <Playing screen={screen} couch={couch} /> : null}
       </Box>
 
       <Box>
@@ -336,9 +387,15 @@ function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { k
   );
 }
 
-function SourceList({ screen, selected, height }: { screen: Extract<Screen, { kind: "sources" }>; selected: number; height: number }) {
+function SourceList({ screen, selected, height, couch }: { screen: Extract<Screen, { kind: "sources" }>; selected: number; height: number; couch: boolean }) {
   if (!screen.torrents) return <Text color={C.accent}>asking YTS, EZTV, The Pirate Bay, Knaben and Nyaa…</Text>;
-  if (!screen.torrents.length) return <Text color={C.warn}>No sources found{screen.offline.length ? ` (offline: ${screen.offline.join(", ")})` : ""}.</Text>;
+  if (!screen.torrents.length)
+    return (
+      <Text color={C.warn}>
+        {/* in couch mode, an empty list usually means no browser-playable release */}
+        {couch ? "No release every browser can play (MP4, H.264) for this one; plain flick still plays it. " : ""}No sources found{screen.offline.length ? ` (offline: ${screen.offline.join(", ")})` : ""}.
+      </Text>
+    );
   const [from, to] = windowOf(screen.torrents.length, selected, height - 1);
   return (
     <Box flexDirection="column">
@@ -368,7 +425,7 @@ function SourceList({ screen, selected, height }: { screen: Extract<Screen, { ki
   );
 }
 
-function Playing({ screen }: { screen: Extract<Screen, { kind: "playing" }> }) {
+function Playing({ screen, couch }: { screen: Extract<Screen, { kind: "playing" }>; couch?: Couch }) {
   const p = screen.progress;
   return (
     <Box flexDirection="column">
@@ -383,6 +440,11 @@ function Playing({ screen }: { screen: Extract<Screen, { kind: "playing" }> }) {
       {p ? (
         <Text color={C.mute}>
           {p.percent >= 100 ? "fully downloaded" : `${p.percent}% downloaded · ↓ ${humanSize(p.downBytesPerSec)}/s · ${p.peers} peers`}
+        </Text>
+      ) : null}
+      {couch && !screen.error ? (
+        <Text color={C.mute}>
+          {couch.room.people().length} in the room · {couch.room.sentBytes ? humanSize(couch.room.sentBytes) : "0 MB"} sent to the room
         </Text>
       ) : null}
     </Box>

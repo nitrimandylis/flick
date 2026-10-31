@@ -97,7 +97,8 @@ describe("ui and arguments", () => {
   });
   test("arguments", () => {
     expect(parseArgs(["--help"])).toBe("help");
-    expect(parseArgs(["fight", "club", "--player", "mpv"])).toEqual({ query: "fight club", player: "mpv", dub: false });
+    expect(parseArgs(["fight", "club", "--player", "mpv"])).toEqual({ query: "fight club", player: "mpv", dub: false, couch: false });
+    expect(parseArgs(["couch", "before", "sunrise"])).toEqual({ query: "before sunrise", dub: false, couch: true });
     expect(parseArgs(["--engine"])).toEqual({ error: "--engine needs a value" });
     expect(parseArgs(["--nope"])).toEqual({ error: "unknown option --nope (see flick --help)" });
   });

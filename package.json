@@ -8,7 +8,12 @@
   "bin": {
     "flick": "dist/flick.js"
   },
-  "files": ["dist", "man", "flick-cli"],
+  "files": [
+    "dist",
+    "room",
+    "man",
+    "flick-cli"
+  ],
   "engines": {
     "node": ">=22"
   },

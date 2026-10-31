@@ -1,0 +1,389 @@
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("/fonts/space-grotesk.woff2") format("woff2");
+  font-weight: 300 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Mono";
+  src: url("/fonts/space-mono.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --void: #060a12;
+  --glass: rgba(6, 10, 18, 0.72);
+  --edge: rgba(232, 241, 245, 0.09);
+  --ink: #e8f1f5;
+  --mute: #7d8a9a;
+  --cyan: #3df5ff;
+  --magenta: #ff3dcb;
+  --glow: 0 0 6px rgba(61, 245, 255, 0.55), 0 0 18px rgba(61, 245, 255, 0.25);
+  --sans: "Space Grotesk", system-ui, sans-serif;
+  --mono: "Space Mono", ui-monospace, monospace;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--void);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 17px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input { font: inherit; color: inherit; }
+
+button { cursor: pointer; }
+
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.time { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+
+[hidden] { display: none !important; }
+
+/* ---------- the neon sign (gate + landing) ---------- */
+
+.sign {
+  border: 0;
+  background: none;
+  padding: 0.1em 0.2em;
+  font-size: clamp(64px, 13vw, 168px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1;
+  color: #eafeff;
+  text-shadow:
+    0 0 4px rgba(61, 245, 255, 0.9),
+    0 0 14px rgba(61, 245, 255, 0.6),
+    0 0 42px rgba(61, 245, 255, 0.35),
+    0 0 90px rgba(61, 245, 255, 0.18);
+  animation: ignite 420ms steps(1, end) both;
+  transition: text-shadow 200ms var(--ease), transform 160ms var(--ease);
+}
+.sign:hover {
+  text-shadow:
+    0 0 4px rgba(61, 245, 255, 1),
+    0 0 18px rgba(61, 245, 255, 0.75),
+    0 0 56px rgba(61, 245, 255, 0.45),
+    0 0 120px rgba(61, 245, 255, 0.25);
+}
+.sign:active { transform: scale(0.98); }
+.sign:disabled { opacity: 0.35; animation: none; cursor: default; }
+
+/* Two flickers, then it holds: a tube catching. */
+@keyframes ignite {
+  0%   { opacity: 0.08; text-shadow: none; }
+  18%  { opacity: 1; }
+  30%  { opacity: 0.15; text-shadow: none; }
+  52%  { opacity: 1; }
+  62%  { opacity: 0.4; }
+  74%  { opacity: 1; }
+}
+
+/* ---------- full-screen panels (landing, gate, empty room) ---------- */
+
+.panel {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  display: grid;
+  place-content: safe center;
+  justify-items: center;
+  gap: 28px;
+  padding: 32px;
+  text-align: center;
+  background:
+    radial-gradient(60% 50% at 50% 55%, rgba(61, 245, 255, 0.06), transparent 70%),
+    var(--void);
+}
+
+.panel p { margin: 0; max-width: 34ch; color: var(--mute); }
+.panel .lead { color: var(--ink); font-size: 20px; }
+
+.name {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+.name label { color: var(--mute); font-size: 15px; }
+.name input {
+  width: 15ch;
+  border: 0;
+  border-bottom: 1px solid var(--edge);
+  background: transparent;
+  padding: 6px 2px;
+  font-size: 26px;
+  text-align: center;
+  outline: none;
+  transition: border-color 200ms var(--ease);
+}
+.name input:focus { border-color: var(--cyan); }
+
+.quiet-button {
+  border: 1px solid var(--edge);
+  background: transparent;
+  border-radius: 999px;
+  padding: 10px 22px;
+}
+.quiet-button { transition: border-color 160ms var(--ease), color 160ms var(--ease), transform 140ms var(--ease); }
+.quiet-button:active { transform: scale(0.97); }
+@media (hover: hover) and (pointer: fine) {
+  .quiet-button:hover { border-color: var(--cyan); color: #fff; }
+  .stars button:hover { border-color: var(--cyan); }
+}
+
+/* ---------- empty room ---------- */
+
+.panel .nothing-on {
+  font-size: clamp(32px, 5.4vw, 64px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  color: var(--ink);
+  max-width: none;
+}
+
+.panel code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--cyan);
+}
+
+/* ---------- stage: the player and what floats over it ---------- */
+
+.stage { position: fixed; inset: 0; background: #000; }
+.stage video { width: 100%; height: 100%; display: block; background: #000; accent-color: var(--cyan); }
+
+/* Subtitles in the room's type, on a soft plate rather than a black bar. */
+.stage video::cue {
+  font-family: var(--sans);
+  font-size: 1.05em;
+  color: #fff;
+  background: rgba(6, 10, 18, 0.62);
+}
+
+.pill {
+  position: absolute;
+  z-index: 3;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 8px 8px 8px 16px;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--glass);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  font-size: 14px;
+  white-space: nowrap;
+  transition: opacity 220ms var(--ease), transform 220ms var(--ease);
+}
+.pill.asleep { opacity: 0; transform: translateY(-6px); pointer-events: none; transition-duration: 160ms; }
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--cyan);
+  box-shadow: var(--glow);
+}
+.dot.waiting { background: var(--mute); box-shadow: none; animation: breathe 2.4s ease-in-out infinite; }
+.dot.drift { background: var(--magenta); box-shadow: 0 0 6px rgba(255, 61, 203, 0.6), 0 0 16px rgba(255, 61, 203, 0.3); }
+@keyframes breathe { 50% { opacity: 0.35; } }
+
+.pill .film { color: var(--mute); overflow: hidden; text-overflow: ellipsis; max-width: 24ch; }
+.pill .time { color: var(--ink); }
+.pill .time .of { color: var(--mute); }
+
+.resync {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--magenta);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cc {
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  background: transparent;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--mute);
+  transition: color 160ms var(--ease), border-color 160ms var(--ease), box-shadow 160ms var(--ease);
+}
+.cc.on { color: #fff; border-color: var(--cyan); box-shadow: var(--glow); }
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  transition: background 160ms var(--ease);
+}
+.icon-button:hover { background: rgba(232, 241, 245, 0.08); }
+.icon-button svg { width: 16px; height: 16px; }
+
+/* Top centre: the bottom of the frame belongs to subtitles and the play bar. */
+.toast {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  top: 16px;
+  transform: translate(-50%, 0);
+  padding: 10px 18px;
+  border: 1px solid var(--edge);
+  border-left: 2px solid var(--cyan);
+  border-radius: 10px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-size: 15px;
+  white-space: nowrap;
+  pointer-events: none;
+  transition: opacity 200ms var(--ease), transform 200ms var(--ease);
+}
+.toast.gone { opacity: 0; transform: translate(-50%, -8px); transition-duration: 150ms; }
+
+.curtain {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  background: rgba(6, 10, 18, 0.94);
+  transition: opacity 240ms var(--ease);
+}
+.curtain.gone { opacity: 0; pointer-events: none; transition-duration: 180ms; }
+.curtain p { margin: 0; max-width: 36ch; font-size: 22px; letter-spacing: -0.01em; text-align: center; }
+.curtain .line {
+  width: 160px;
+  height: 2px;
+  background: rgba(61, 245, 255, 0.15);
+  overflow: hidden;
+  border-radius: 2px;
+}
+.curtain .line::after {
+  content: "";
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--cyan);
+  box-shadow: var(--glow);
+  transform-origin: left;
+  animation: fill 6s linear forwards;
+}
+@keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------- after the film ---------- */
+
+.after {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--void);
+}
+.backdrop {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 78vh;
+  background-size: cover;
+  background-position: center 30%;
+  opacity: 0.38;
+  mask-image: linear-gradient(to bottom, #000 30%, transparent);
+  -webkit-mask-image: linear-gradient(to bottom, #000 30%, transparent);
+}
+.after-body {
+  position: relative;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 26vh 40px 80px;
+  display: grid;
+  grid-template-columns: minmax(0, 62ch) 300px;
+  justify-content: space-between;
+  gap: 56px;
+  align-items: start;
+}
+.after h1 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: clamp(48px, 8vw, 104px);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 0.95;
+}
+.facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin: -36px 0 0; grid-column: 1 / -1; color: var(--mute); }
+.tagline { margin: 0 0 18px; font-size: 22px; line-height: 1.35; color: #fff; }
+.plot, .about { margin: 0 0 18px; }
+.about { color: var(--mute); }
+.credits { margin: 28px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 6px 20px; }
+.credits dt { color: var(--mute); }
+.credits dd { margin: 0; }
+
+.verdict {
+  position: sticky;
+  top: 32px;
+  display: grid;
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--edge);
+  border-radius: 20px;
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.verdict .quiet-button { white-space: nowrap; }
+.verdict h2 { margin: 0; font-size: 20px; font-weight: 500; }
+.verdict p { margin: 0; color: var(--mute); }
+.stars { display: flex; gap: 8px; }
+.stars button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--edge);
+  border-radius: 50%;
+  background: transparent;
+  font-size: 18px;
+  transition: border-color 160ms var(--ease), background 160ms var(--ease), box-shadow 160ms var(--ease), transform 140ms var(--ease);
+}
+.stars button:active { transform: scale(0.95); }
+.stars button.picked { border-color: var(--cyan); background: rgba(61, 245, 255, 0.12); box-shadow: var(--glow); }
+.reveal { display: flex; gap: 32px; }
+.reveal div { display: grid; }
+.reveal strong { font-size: 64px; font-weight: 600; line-height: 1; letter-spacing: -0.04em; color: #fff; text-shadow: var(--glow); }
+.reveal span { color: var(--mute); }
+
+@media (max-width: 760px) {
+  .after-body { grid-template-columns: 1fr; padding: 30vh 22px 60px; gap: 36px; }
+  .pill .film { display: none; }
+}
+
+/* Reduced motion keeps the fades (they explain what changed) and drops movement and loops. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
+  .pill.asleep { transform: none; }
+  .toast, .toast.gone { transform: translate(-50%, 0); }
+  .sign:active, .quiet-button:active, .stars button:active { transform: none; }
+}

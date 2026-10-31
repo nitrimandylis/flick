@@ -4,6 +4,7 @@
 import { render } from "ink";
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { Couch } from "./couch.ts";
 import { pickEngine } from "./engines.ts";
 import { installedPlayers, pickPlayer } from "./players.ts";
 import { loadConfig } from "./store.ts";
@@ -17,6 +18,8 @@ const HELP = `flick ${VERSION}: search a film, pick a torrent, watch it now
 usage:
   flick                     open flick: continue watching, trending, search
   flick <title>             open flick already searching for <title>
+  flick couch [title]       watch together: films play in a room in both your
+                            browsers, in sync; flick prints the room's link
 
 options:
   --engine rqbit|webtorrent   torrent engine (default: rqbit if installed, else webtorrent)
@@ -27,14 +30,17 @@ options:
   -v, --version               the version
 
 Settings live in ~/.config/flick/config.json (engine, player, cacheGB, dub).
+couch rooms run on this computer through a free Cloudflare quick tunnel (a new
+address each time). For one fixed address, create a named Cloudflare tunnel
+routed to http://localhost:8765 and set tunnelToken and tunnelHost there.
 Films are cached in ~/.cache/flick, capped at 10 GB by default; the least
 recently watched go first. Nothing keeps uploading once a film is closed.`;
 
-type Args = { query: string; engine?: string; player?: string; dub: boolean };
+type Args = { query: string; engine?: string; player?: string; dub: boolean; couch: boolean };
 
 /** Command-line arguments into options. Unknown flags are an error. Pure. */
 export function parseArgs(argv: string[]): Args | { error: string } | "help" | "version" {
-  const args: Args = { query: "", dub: false };
+  const args: Args = { query: "", dub: false, couch: false };
   const words: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -48,6 +54,10 @@ export function parseArgs(argv: string[]): Args | { error: string } | "help" | "
       else args.player = value;
     } else if (arg.startsWith("-")) return { error: `unknown option ${arg} (see flick --help)` };
     else words.push(arg);
+  }
+  if (words[0] === "couch") {
+    args.couch = true;
+    words.shift();
   }
   args.query = words.join(" ");
   return args;
@@ -88,10 +98,14 @@ function main() {
   }
 
   const engine = pickEngine(engineChoice);
-  // Closing the terminal window (or a kill) must not leave a torrent uploading.
+  const couch = parsed.couch ? Couch.start() : undefined;
+  // Closing the terminal window (or a kill) must not leave a torrent uploading
+  // or a tunnel open.
   for (const signal of ["SIGHUP", "SIGTERM"] as const) {
-    process.on(signal, () => {
-      engine.shutdown().finally(() => process.exit(0));
+    process.on(signal, async () => {
+      await couch?.close().catch(() => {});
+      await engine.shutdown().catch(() => {});
+      process.exit(0);
     });
   }
 
@@ -102,6 +116,7 @@ function main() {
       cacheGB={config.cacheGB ?? 10}
       dub={parsed.dub || Boolean(config.dub)}
       initialQuery={parsed.query}
+      couch={couch}
     />,
     { alternateScreen: true, exitOnCtrlC: false },
   );
