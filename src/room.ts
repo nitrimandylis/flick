@@ -27,7 +27,8 @@ export type RoomState = {
 
 export type Seat = { id: string; name: string };
 
-const STATE_PATH = join(CONFIG_DIR, "room.json");
+// Each room remembers its last film and ratings in its own file.
+const ROOMS_DIR = join(CONFIG_DIR, "rooms");
 
 // The room's page and assets ship next to the built CLI: dist/flick.js -> ../room
 const ASSETS = join(dirname(fileURLToPath(import.meta.url)), "..", "room");
@@ -72,9 +73,12 @@ export class Room {
   sentBytes = 0;
   onChange: () => void = () => {}; // the TUI redraws who is here and what's sent
 
+  private statePath: string;
+
   constructor(id: string) {
     this.id = id;
-    const saved = existsSync(STATE_PATH) ? JSON.parse(readFileSync(STATE_PATH, "utf-8")) : {};
+    this.statePath = join(ROOMS_DIR, `${id}.json`);
+    const saved = existsSync(this.statePath) ? JSON.parse(readFileSync(this.statePath, "utf-8")) : {};
     // A saved room never has a stream: that only exists while flick runs.
     this.state = { ...emptyState(), ...saved, src: null, playing: false };
     const wss = new WebSocketServer({ noServer: true });
@@ -255,9 +259,9 @@ export class Room {
   }
 
   private save() {
-    mkdirSync(CONFIG_DIR, { recursive: true });
+    mkdirSync(ROOMS_DIR, { recursive: true });
     const { src, ...rest } = this.state; // the stream never outlives flick
-    writeFileSync(STATE_PATH, JSON.stringify(rest));
+    writeFileSync(this.statePath, JSON.stringify(rest));
   }
 
   // ---------- http ----------

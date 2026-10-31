@@ -9,6 +9,7 @@
 const DRIFT_LIMIT = 3; // seconds apart before the pill turns magenta
 const CURTAIN_CAP = 10000; // ms before the loading curtain gives up and lifts
 const SEEK_LEAD = 1.5; // seconds: a jump while playing re-buffers through the tunnel, so land ahead
+const FOLLOW_SLACK = 2; // seconds a playing film may differ from the room before we seek
 
 const roomId = location.pathname.split("/")[2];
 const $ = (id) => document.getElementById(id);
@@ -28,6 +29,8 @@ let peers = [];
 let playing = null; // the source we attached: { key, url, subs }
 let peerPos = null; // { name, time, playing, at } from the other browser
 let sendTimer = null;
+let lastLocalAction = 0; // ms: when the person at this screen last played, paused or seeked
+let ownSeek = null; // where follow() last sent our player; that seek finishing isn't a person seeking
 let capTimer = null;
 
 // ---------- small helpers ----------
@@ -130,10 +133,11 @@ async function applyState(msg) {
   const fromMe = msg.byId === me.id;
   if (!playing || playing.key !== room.src.url) {
     await attach();
-    follow();
-  } else if (["play", "pause", "seek"].includes(msg.action) && !fromMe) {
-    follow();
   }
+  // Always line up with the room, even after our own action: if the other
+  // person acted at the same moment, the room may already disagree with what
+  // we did. When we already match, follow() changes nothing.
+  follow();
 
   if (!fromMe && msg.by) {
     if (msg.action === "play") toast(msg.by + " pressed play at " + clock(room.time));
@@ -173,14 +177,17 @@ function detach() {
   video.load();
 }
 
-// Put our player where the room is.
+// Put our player where the room is. Small differences are left alone: a
+// playing film is allowed to be off by up to FOLLOW_SLACK (wider than
+// SEEK_LEAD, so a follower that landed ahead doesn't seek itself again).
 function follow() {
   if (!playing) return;
   const target = roomTime();
-  if (Math.abs(video.currentTime - target) > 0.5) video.currentTime = target + (room.playing ? SEEK_LEAD : 0);
-  if (room.playing) {
+  const slack = room.playing ? FOLLOW_SLACK : 0.5;
+  if (Math.abs(video.currentTime - target) > slack) seekTo(target + (room.playing ? SEEK_LEAD : 0));
+  if (room.playing && video.paused) {
     video.play().catch(() => toast("Press play: the browser didn't let couch start the film.", 5000));
-  } else {
+  } else if (!room.playing && !video.paused) {
     video.pause();
   }
 }
@@ -188,6 +195,7 @@ function follow() {
 // Report a change made by the person at this screen. Seeking fires a burst of
 // events while the bar is dragged, so only where it settles is sent.
 function report() {
+  lastLocalAction = Date.now();
   clearTimeout(sendTimer);
   sendTimer = setTimeout(() => {
     send({ type: "set", playing: !video.paused, time: video.currentTime });
@@ -195,18 +203,52 @@ function report() {
 }
 
 video.addEventListener("play", () => {
-  if (room && !room.playing) report();
+  if (room && !room.playing) return report();
+  // The room is already playing and our player was paused (say autoplay was
+  // blocked and they pressed play by hand): start from where the room is.
+  if (room && Math.abs(video.currentTime - roomTime()) > FOLLOW_SLACK) seekTo(roomTime() + SEEK_LEAD);
 });
 video.addEventListener("pause", () => {
   if (video.ended) return;
   if (room && room.playing) report();
 });
+// Seeks flick makes to follow the room, remembered so their "seeked" event,
+// which can arrive many seconds later on a slow connection, isn't mistaken
+// for the person seeking (that would drag everyone back to a stalled spot).
+function seekTo(time) {
+  ownSeek = time;
+  video.currentTime = time;
+}
+
 video.addEventListener("seeked", () => {
-  if (room && Math.abs(video.currentTime - roomTime()) > 2.5) report(); // wider than SEEK_LEAD
+  if (ownSeek !== null && Math.abs(video.currentTime - ownSeek) < 1) {
+    ownSeek = null;
+    return;
+  }
+  ownSeek = null;
+  if (room && Math.abs(video.currentTime - roomTime()) > FOLLOW_SLACK + 0.5) report(); // wider than any seek of our own
 });
 video.addEventListener("ended", () => send({ type: "ended" }));
 video.addEventListener("canplay", hideCurtain);
 video.addEventListener("timeupdate", updateClock);
+
+// Stay locked to the room's clock while playing: nudge the speed by 5% (pitch
+// is preserved, so it's inaudible) to close small gaps, instead of seeking,
+// which would stutter. Big gaps are follow()'s job.
+setInterval(() => {
+  if (!playing || !room || !room.playing || video.paused || video.seeking) {
+    video.playbackRate = 1;
+    return;
+  }
+  // Right after our own seek the room hasn't heard about it yet, and its clock
+  // still shows the old spot. Don't drag the person back to it.
+  if (Date.now() - lastLocalAction < 3000) return;
+  const behind = roomTime() - video.currentTime;
+  if (Math.abs(behind) > FOLLOW_SLACK) follow();
+  else if (behind > 0.3) video.playbackRate = 1.05;
+  else if (behind < -0.3) video.playbackRate = 0.95;
+  else video.playbackRate = 1;
+}, 1000);
 
 // Tell the other browser where we are, for the drift badge.
 setInterval(() => {
