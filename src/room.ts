@@ -269,7 +269,7 @@ export class Room {
       if (path === room || path === `${room}/`) return this.file(res, "room.html");
       if (path === `${room}/film.mp4`) return await this.film(req, res);
       if (path === `${room}/subs.vtt` && this.vtt) {
-        res.writeHead(200, { "content-type": "text/vtt; charset=utf-8" });
+        res.writeHead(200, { "content-type": "text/vtt; charset=utf-8", "cache-control": "no-store" });
         return res.end(this.vtt);
       }
       const details = path.match(/^\/api\/film\/(tt\d+)$/);
@@ -307,7 +307,9 @@ export class Room {
     req.on("close", () => abort.abort()); // a seek drops the old request
     const range = req.headers.range;
     const upstream = await fetch(this.filmUrl, { headers: range ? { range } : {}, signal: abort.signal });
-    const headers: Record<string, string> = { "content-type": "video/mp4", "accept-ranges": "bytes" };
+    // no-store: on a named tunnel Cloudflare caches .mp4 by default, and would try
+    // to pull the whole film into its cache before answering the first request.
+    const headers: Record<string, string> = { "content-type": "video/mp4", "accept-ranges": "bytes", "cache-control": "no-store" };
     for (const name of ["content-range", "content-length"]) {
       const value = upstream.headers.get(name);
       if (value) headers[name] = value;

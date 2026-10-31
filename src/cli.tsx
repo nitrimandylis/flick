@@ -32,7 +32,7 @@ options:
 Settings live in ~/.config/flick/config.json (engine, player, cacheGB, dub).
 couch rooms run on this computer through a free Cloudflare quick tunnel (a new
 address each time). For one fixed address, create a named Cloudflare tunnel
-routed to http://localhost:8765 and set tunnelToken and tunnelHost there.
+routed to http://127.0.0.1:8765 and set tunnelToken and tunnelHost there.
 Films are cached in ~/.cache/flick, capped at 10 GB by default; the least
 recently watched go first. Nothing keeps uploading once a film is closed.`;
 
