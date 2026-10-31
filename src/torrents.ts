@@ -33,6 +33,14 @@ export function magnetFromHash(hash: string, name: string): string {
   return `magnet:?xt=urn:btih:${hash.toLowerCase()}&dn=${encodeURIComponent(name)}${trackers}`;
 }
 
+/** A magnet with flick's public trackers added (skipping ones it already has).
+ *  Pasted magnets often carry no trackers, and without them peers are slow or
+ *  impossible to find. Pure. */
+export function withTrackers(magnet: string): string {
+  const missing = TRACKERS.filter((t) => !magnet.includes(encodeURIComponent(t)) && !magnet.includes(t));
+  return magnet + missing.map((t) => `&tr=${encodeURIComponent(t)}`).join("");
+}
+
 /** The info hash inside a magnet link, lowercase, or "" if there isn't one. Pure. */
 export function hashOf(magnet: string): string {
   return magnet.match(/btih:([a-z0-9]+)/i)?.[1]?.toLowerCase() ?? "";

@@ -2,7 +2,7 @@
 // rqbit (a separate program, fast) is used when it's installed; webtorrent
 // (built into flick) works everywhere with nothing to install.
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import WebTorrent from "webtorrent";
 import { FILMS_DIR } from "./store.ts";
@@ -127,6 +127,10 @@ class Rqbit implements Engine {
   async shutdown() {
     this.child?.kill();
     this.child = null;
+    // Port 3041 is flick's own rqbit, so stop it even if an earlier flick that
+    // crashed left it running: an orphaned rqbit would keep uploading.
+    // Anchored to the program name, so it only ever matches that rqbit.
+    spawnSync("pkill", ["-f", "^rqbit --http-api-listen-addr 127.0.0.1:3041"], { stdio: "ignore" });
   }
 }
 
