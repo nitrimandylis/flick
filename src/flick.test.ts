@@ -8,6 +8,7 @@ import { parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
 import { browserPlayable, hashOf, matchesShow, qualityLabel, withTrackers } from "./torrents.ts";
 import { sourceTag, windowOf } from "./ui.tsx";
 import { trimCache } from "./store.ts";
+import { applySet, currentTime, emptyState } from "./room.ts";
 import { mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -120,5 +121,25 @@ describe("cache cap", () => {
     const capGB = (6.5 * mb) / 1024 ** 3; // room for two of the three
     expect(trimCache(capGB, "playing", dir)).toEqual(["old"]);
     expect(readdirSync(dir).sort()).toEqual(["middle", "playing"]);
+  });
+});
+
+describe("room", () => {
+  const playingAt = (time: number, at: number) => ({ ...emptyState(), film: { id: "tt1", title: "Film" }, playing: true, time, at });
+  test("a report that matches the room is an echo, not an action", () => {
+    const s = playingAt(100, 0);
+    expect(applySet(s, true, 110.5, 10_000)).toBeNull(); // room says 110, within 2 s
+    expect(applySet(s, false, 110, 10_000)).toBe("pause");
+    expect(applySet(s, false, 110, 11_000)).toBeNull(); // paused, same spot
+    expect(applySet(s, false, 200, 11_000)).toBe("seek");
+    expect(applySet(s, true, 200, 12_000)).toBe("play");
+  });
+  test("the room clock runs only while playing", () => {
+    expect(currentTime(playingAt(50, 1000), 3000)).toBe(52);
+    expect(currentTime({ ...playingAt(50, 1000), playing: false }, 3000)).toBe(50);
+  });
+  test("nothing happens without a film, or after it ended", () => {
+    expect(applySet(emptyState(), true, 0, 0)).toBeNull();
+    expect(applySet({ ...playingAt(0, 0), ended: true }, false, 5, 0)).toBeNull();
   });
 });

@@ -1,13 +1,13 @@
 // Sync stress test for flick couch (development only, not shipped).
 // Runs a real room through a quick tunnel, with Big Buck Bunny as the film,
 // and two or three headless Chromium browsers acting on it.
-// Run with: node sync-stress.ts
+// Run with: node scripts/sync-stress.ts (needs rqbit and a global playwright-core)
 
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { pickEngine } from "./src/engines.ts";
-import { Room } from "./src/room.ts";
-import { openTunnel } from "./src/tunnel.ts";
+import { pickEngine } from "../src/engines.ts";
+import { Room } from "../src/room.ts";
+import { openTunnel } from "../src/tunnel.ts";
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(homedir() + "/.bun/install/global/node_modules/playwright-core");
