@@ -24,6 +24,7 @@ let seated = false;
 let room = null; // last state from the server
 let raters = []; // browser ids that have rated, from the server
 let clockOffset = 0; // server clock minus our clock, in ms
+let seenRev = 0; // the room's revision in its last state message: sent with each press
 let peers = [];
 
 let playing = null; // the source we attached: { key, url, subs }
@@ -31,6 +32,8 @@ let peerPos = null; // { name, time, playing, at } from the other browser
 let sendTimer = null;
 let lastLocalAction = 0; // ms: when the person at this screen last played, paused or seeked
 let ownSeek = null; // where follow() last sent our player; that seek finishing isn't a person seeking
+// "play"/"pause" events flick caused itself, so they aren't reported as the person's.
+const ownToggle = new Set();
 let capTimer = null;
 
 // ---------- small helpers ----------
@@ -80,6 +83,7 @@ function connect() {
 function onServer(msg) {
   if (msg.type === "state") {
     clockOffset = msg.now - Date.now();
+    seenRev = msg.rev;
     applyState(msg);
   } else if (msg.type === "peers") {
     peers = msg.peers;
@@ -125,7 +129,7 @@ async function applyState(msg) {
 
   if (!room.src) {
     // The host is between films (the torrent stopped). Hold where we are.
-    video.pause();
+    pausePlayer();
     curtain("The host stopped the film. It comes back when they start it again in flick.");
     return;
   }
@@ -155,6 +159,7 @@ async function applyState(msg) {
 async function attach() {
   const { url, subs } = room.src;
   playing = { key: url, url, subs };
+  pausePlayer(); // swapping the source stops the old one: not the person pausing
 
   curtain("Loading " + room.film.title + "…");
   video.src = url;
@@ -173,6 +178,7 @@ async function attach() {
 function detach() {
   if (!playing) return;
   playing = null;
+  pausePlayer();
   video.removeAttribute("src");
   video.load();
 }
@@ -183,34 +189,57 @@ function detach() {
 function follow() {
   if (!playing) return;
   const target = roomTime();
-  const slack = room.playing ? FOLLOW_SLACK : 0.5;
+  const slack = room.playing ? FOLLOW_SLACK : 0.2; // paused, a seek is free: show the same frame
   if (Math.abs(video.currentTime - target) > slack) seekTo(target + (room.playing ? SEEK_LEAD : 0));
   if (room.playing && video.paused) {
-    video.play().catch(() => toast("Press play: the browser didn't let couch start the film.", 5000));
+    ownToggle.add("play");
+    video.play().catch(() => {
+      ownToggle.delete("play");
+      toast("Press play: the browser didn't let couch start the film.", 5000);
+    });
   } else if (!room.playing && !video.paused) {
-    video.pause();
+    pausePlayer();
   }
 }
 
 // Report a change made by the person at this screen. Seeking fires a burst of
 // events while the bar is dragged, so only where it settles is sent.
-function report() {
+// `playing` is what the person asked for, kept from the moment they asked: a
+// late message from the room can still flip our player inside the 300 ms.
+let wantPlaying = null;
+let wantRev = 0; // what this screen had seen of the room when the person pressed
+function report(playing) {
   lastLocalAction = Date.now();
+  if (playing !== undefined) {
+    wantPlaying = playing;
+    wantRev = seenRev;
+  }
   clearTimeout(sendTimer);
   sendTimer = setTimeout(() => {
-    send({ type: "set", playing: !video.paused, time: video.currentTime });
+    send({ type: "set", playing: wantPlaying ?? !video.paused, time: video.currentTime, rev: wantPlaying === null ? seenRev : wantRev });
+    wantPlaying = null;
   }, 300);
 }
 
+function pausePlayer() {
+  if (video.paused) return;
+  ownToggle.add("pause");
+  video.pause();
+}
+
+// Every play or pause the person makes is reported, even when our copy of the
+// room already agrees: that copy can be a second or more out of date on a slow
+// tunnel, and the room itself drops reports that change nothing.
 video.addEventListener("play", () => {
-  if (room && !room.playing) return report();
+  if (ownToggle.delete("play")) return;
   // The room is already playing and our player was paused (say autoplay was
   // blocked and they pressed play by hand): start from where the room is.
-  if (room && Math.abs(video.currentTime - roomTime()) > FOLLOW_SLACK) seekTo(roomTime() + SEEK_LEAD);
+  if (room && room.playing && Math.abs(video.currentTime - roomTime()) > FOLLOW_SLACK) seekTo(roomTime() + SEEK_LEAD);
+  report(true);
 });
 video.addEventListener("pause", () => {
-  if (video.ended) return;
-  if (room && room.playing) report();
+  if (ownToggle.delete("pause") || video.ended) return;
+  report(false);
 });
 // Seeks flick makes to follow the room, remembered so their "seeked" event,
 // which can arrive many seconds later on a slow connection, isn't mistaken

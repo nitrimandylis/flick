@@ -25,8 +25,12 @@ room.setFilm({ id: "tt1254207", title: "Big Buck Bunny", year: 2008 }, stream.ur
 console.log("room:", link);
 
 const LOG = `window.acts = []; ws.addEventListener("message", (e) => { const m = JSON.parse(e.data); if (m.type === "state" && m.action) window.acts.push(m.action + " by " + m.by + " @" + Math.round(m.state.time)); }); 1`;
-const browser = await chromium.launch();
+// One browser per seat, like two people on two computers: tabs sharing one
+// browser fight over audio focus, and Chrome pauses one when the other plays.
+const browsers: any[] = [];
 async function seat(name: string) {
+  const browser = await chromium.launch();
+  browsers.push(browser);
   const page = await browser.newPage();
   await page.goto(link);
   await page.fill("#name", name);
@@ -180,7 +184,7 @@ else {
 }
 
 console.log(failures ? `${failures} FAILED` : "ALL PASSED");
-await browser.close();
+for (const b of browsers) await b.close();
 room.close();
 tunnel.stop();
 await stream.stop();

@@ -61,12 +61,22 @@ export function applySet(s: RoomState, playing: boolean, time: number, now = Dat
   return action;
 }
 
+/** Two people pressing play and pause at the same moment: the later press was
+ *  made before its browser saw the first one land (`seen` is the last revision
+ *  that browser had), so the first one stands. `last` is the latest play/pause
+ *  change: who made it and at which revision. Pure. */
+export function crossedToggle(last: { by: string; rev: number } | null, by: string, seen: number): boolean {
+  return last !== null && last.by !== by && seen < last.rev;
+}
+
 export class Room {
   readonly id: string;
   state: RoomState;
   private seats = new Map<WebSocket, Seat>();
   private sockets = new Set<WebSocket>();
   private lastPos: number | null = null; // last position someone reported
+  private lastToggle: { by: string; rev: number } | null = null; // latest play/pause change
+  private rev = 0; // goes up with every change the room broadcasts
   private filmUrl: string | null = null; // the engine's local stream URL
   private vtt: string | null = null;
   private server: Server;
@@ -194,7 +204,12 @@ export class Room {
 
     let action: string | null = null;
     if (msg.type === "set") {
+      if (!!msg.playing !== s.playing && crossedToggle(this.lastToggle, seat.id, Number(msg.rev) || 0)) {
+        ws.send(JSON.stringify(this.stateMessage(null, null))); // the late browser follows the room
+        return;
+      }
       action = applySet(s, !!msg.playing, Number(msg.time) || 0);
+      if (action === "play" || action === "pause") this.lastToggle = { by: seat.id, rev: this.rev + 1 }; // the broadcast below
     } else if (msg.type === "ended" && s.film && !s.ended) {
       s.ended = true;
       s.playing = false;
@@ -235,6 +250,7 @@ export class Room {
 
   /** Ratings stay hidden until both people have rated. */
   stateMessage(action: string | null, seat: Seat | null) {
+    if (action) this.rev++;
     const ratings = Object.values(this.state.ratings);
     const revealed = ratings.length >= 2;
     return {
@@ -242,6 +258,7 @@ export class Room {
       state: { ...this.state, ratings: ratings.map((r) => ({ name: r.name, stars: revealed ? r.stars : null })) },
       raters: Object.keys(this.state.ratings),
       action,
+      rev: this.rev,
       by: seat?.name ?? null,
       byId: seat?.id ?? null,
       now: Date.now(),

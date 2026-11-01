@@ -8,7 +8,7 @@ import { parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
 import { browserPlayable, hashOf, matchesShow, qualityLabel, withTrackers } from "./torrents.ts";
 import { sourceTag, windowOf } from "./ui.tsx";
 import { trimCache } from "./store.ts";
-import { applySet, currentTime, emptyState } from "./room.ts";
+import { applySet, crossedToggle, currentTime, emptyState } from "./room.ts";
 import { mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -142,4 +142,12 @@ describe("room", () => {
     expect(applySet(emptyState(), true, 0, 0)).toBeNull();
     expect(applySet({ ...playingAt(0, 0), ended: true }, false, 5, 0)).toBeNull();
   });
+});
+
+test("a press made before its browser saw the other person's is dropped", () => {
+  const last = { by: "nick", rev: 7 };
+  expect(crossedToggle(last, "guest", 6)).toBe(true); // crossed in flight
+  expect(crossedToggle(last, "guest", 7)).toBe(false); // saw it, then changed their mind
+  expect(crossedToggle(last, "nick", 6)).toBe(false); // your own rapid toggles count
+  expect(crossedToggle(null, "guest", 0)).toBe(false);
 });
