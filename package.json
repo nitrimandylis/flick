@@ -1,6 +1,6 @@
 {
   "name": "@nitrimandylis/flick",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Search a film or a show, pick a torrent, watch it now in a full-screen terminal UI. Or watch together, in sync, from two places.",
   "keywords": [
     "torrent",
