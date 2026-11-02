@@ -19,6 +19,8 @@
 ![ratings](https://img.shields.io/badge/ratings_shown-0_(judge_it_yourself)-FF3DCB?style=flat-square&labelColor=111111)
 ![seeding](https://img.shields.io/badge/seeding_after_you_quit-never-FF3DCB?style=flat-square&labelColor=111111)
 
+![flick](.github/assets/flick.png)
+
 </div>
 
 ---
