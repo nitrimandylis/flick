@@ -20,9 +20,11 @@ export const POSTERS =
   !process.env.TMUX &&
   (process.env.TERM_PROGRAM === "ghostty" || process.env.TERM === "xterm-kitty" || Boolean(process.env.KITTY_WINDOW_ID));
 
-// A poster is 2:3 and a terminal cell is about 1:2, so 18 x 13 cells looks right.
-export const POSTER_COLS = 18;
-export const POSTER_ROWS = 13;
+/** A poster's size in cells for a given height in rows: a poster is 2:3 and a
+ *  cell is about 1:2, so it is 4/3 as many columns as rows. Pure. */
+export function posterSize(rows: number): { cols: number; rows: number } {
+  return { cols: Math.round((rows * 4) / 3), rows };
+}
 
 // The placeholder character, and the marks that tell the terminal which row of
 // the picture a cell shows (kitty's rowcolumn-diacritics list, first entries).
@@ -42,31 +44,34 @@ export function placeholderLines(id: number, cols: number, rows: number): string
   return lines;
 }
 
-const shown = new Map<string, number>(); // poster URL -> picture id in the terminal
+// One picture per poster per size: the terminal scales a picture to the cells
+// it was sent for, so a big and a small copy are two pictures.
+const shown = new Map<string, number>(); // "url|cols|rows" -> picture id in the terminal
 const loading = new Set<string>();
 let nextId = 1; // ids 1-255, because the id travels as a 256-colour number
 
-/** The id of a poster the terminal already has, or null. */
-export function posterId(url: string): number | null {
-  return shown.get(url) ?? null;
+/** The id of a poster the terminal already has at this size, or null. */
+export function posterId(url: string, cols: number, rows: number): number | null {
+  return shown.get(`${url}|${cols}|${rows}`) ?? null;
 }
 
 /** Fetch a poster, convert it, and send it to the terminal. Resolves once it
  *  can be drawn (or quietly never, if anything fails). */
-export async function loadPoster(url: string): Promise<void> {
-  if (!POSTERS || !url || shown.has(url) || loading.has(url)) return;
-  loading.add(url);
+export async function loadPoster(url: string, cols: number, rows: number): Promise<void> {
+  const key = `${url}|${cols}|${rows}`;
+  if (!POSTERS || !url || shown.has(key) || loading.has(key)) return;
+  loading.add(key);
   try {
     const png = await posterPng(url);
     const id = nextId;
     nextId = nextId === 255 ? 1 : nextId + 1;
-    for (const [oldUrl, oldId] of shown) if (oldId === id) shown.delete(oldUrl); // that id gets reused
-    sendPicture(id, png);
-    shown.set(url, id);
+    for (const [oldKey, oldId] of shown) if (oldId === id) shown.delete(oldKey); // that id gets reused
+    sendPicture(id, png, cols, rows);
+    shown.set(key, id);
   } catch {
     // no poster for this one
   } finally {
-    loading.delete(url);
+    loading.delete(key);
   }
 }
 
@@ -88,14 +93,14 @@ async function posterPng(url: string): Promise<Buffer> {
   return readFileSync(png);
 }
 
-/** Send a PNG to the terminal as picture `id`, with a virtual placement the
- *  placeholder cells draw from. Chunked: the protocol takes 4096 bytes at a time. */
-function sendPicture(id: number, png: Buffer) {
+/** Send a PNG to the terminal as picture `id`, with a virtual placement of
+ *  `cols` x `rows` cells that the placeholder cells draw from. Chunked: the protocol takes 4096 bytes at a time. */
+function sendPicture(id: number, png: Buffer, cols: number, rows: number) {
   const data = png.toString("base64");
   let out = "";
   for (let i = 0; i < data.length; i += 4096) {
     const more = i + 4096 < data.length ? 1 : 0;
-    const head = i === 0 ? `a=T,U=1,f=100,i=${id},c=${POSTER_COLS},r=${POSTER_ROWS},q=2,m=${more}` : `m=${more}`;
+    const head = i === 0 ? `a=T,U=1,f=100,i=${id},c=${cols},r=${rows},q=2,m=${more}` : `m=${more}`;
     out += `\x1b_G${head};${data.slice(i, i + 4096)}\x1b\\`;
   }
   process.stdout.write(out);

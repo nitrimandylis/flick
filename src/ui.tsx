@@ -8,9 +8,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { animeQueries, animeTitles, findAnime, type Anime } from "./anime.ts";
 import type { Couch } from "./couch.ts";
 import type { Engine } from "./engines.ts";
-import { C, FilmStrip, Viewfinder, Marquee, Tabs, Tickets, type Hint } from "./look.tsx";
+import { C, FilmStrip, Hints, Marquee, type Hint } from "./look.tsx";
 import type { PlayerName } from "./players.ts";
-import { loadPoster, placeholderLines, posterId, POSTER_COLS, POSTER_ROWS, POSTERS } from "./poster.ts";
+import { loadPoster, placeholderLines, posterId, posterSize, POSTERS } from "./poster.ts";
 import { currentTime } from "./room.ts";
 import { loadHistory, type Watched } from "./store.ts";
 import { details, episodes, isSeries, searchTitles, seasons, sxxeyy, trending, type Details, type Episode, type Title } from "./titles.ts";
@@ -34,13 +34,9 @@ import { watch, type Progress, type Session } from "./watch.ts";
 
 const SOURCE_COLOR: Record<string, string> = { YTS: C.good, EZTV: C.warn, TPB: "#6FC8FF", Nyaa: "#C9A7FF" };
 
-// Below this width the details pane is left out.
-const DETAILS_FROM = 110;
-
 // The home screen's sections, switched with tab, like a cinema programme.
 const SECTIONS = ["Continue", "Now showing", "Shows"] as const;
 type Section = (typeof SECTIONS)[number];
-const SECTION_TITLE: Record<Section, string> = { Continue: "Continue watching", "Now showing": "Trending films", Shows: "Trending shows" };
 
 // The sources list mixes headings (skipped by the arrows) with sources.
 type Heading = { heading: string };
@@ -261,9 +257,13 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
       return;
     }
 
+    // browse: the poster wall moves with ←→ (and ↑↓ too)
+    if (screen.kind === "browse" && (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow)) {
+      const step = key.leftArrow || key.upArrow ? -1 : 1;
+      return setSelected((i) => Math.max(0, Math.min(rows.length - 1, i + step)));
+    }
     if (key.upArrow || key.downArrow) {
       const step = key.upArrow ? -1 : 1;
-      if (screen.kind === "browse") return setSelected((i) => Math.max(0, Math.min(rows.length - 1, i + step)));
       if (screen.kind === "sources") {
         moved.current = true;
         return setSelected((i) => nextRow(sourceList, i, step));
@@ -361,117 +361,108 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
           <Text color={C.bulb}>{nowShowing.length ? "now showing  " : " "}</Text>
           <Text color={C.mute}>{nowShowing.join(" · ")}</Text>
         </Box>
-        <Box marginTop={1} flexShrink={0}>
-          <Viewfinder title="Search" width={boxWidth} focused>
-            <Text>
-              <Text color={C.accent}>▸ </Text>
-              {searchText}
-            </Text>
-          </Viewfinder>
+        <Box marginTop={2} flexShrink={0} flexDirection="column" width={boxWidth}>
+          <Text>
+            <Text color={C.accent}>⌕ </Text>
+            {searchText}
+          </Text>
+          <Text color={C.accent}>{"▔".repeat(boxWidth)}</Text>
         </Box>
         <Box marginTop={1}>
-          <Tickets hints={[["⏎", "search"], ["empty ⏎", "browse"], ["^c", "quit"]]} message={couch?.link ? `couch: ${couch.link}` : undefined} />
+          <Hints hints={[["⏎", "search"], ["empty ⏎", "browse"], ["^c", "quit"]]} message={couch?.link ? `couch: ${couch.link}` : undefined} />
         </Box>
       </Box>
     );
   }
 
   const inner = width - 2;
-  const rightWidth = inner;
-  const detailsWidth = width >= DETAILS_FROM ? Math.floor(inner * 0.5) : 0;
-  const listWidth = inner - detailsWidth - (detailsWidth ? 2 : 0);
-  // marquee 4 + tabs 1 + gap 1 + search 3 + gap 1 + footer 1
-  const panelHeight = Math.max(8, height - 11);
-  const listHeight = panelHeight - 3; // borders and the column header
-
-  let listPanel = null;
-  let pane = null;
-  if (showHelp) {
-    listPanel = (
-      <Viewfinder title="Keys" width={rightWidth} height={panelHeight} focused>
-        <Help />
-      </Viewfinder>
-    );
-  } else if (screen.kind === "browse") {
-    const title = query.trim() ? "Search results" : SECTION_TITLE[section];
-    listPanel = (
-      <Viewfinder title={title} count={rows.length} width={listWidth} height={panelHeight} focused>
-        <TitleList rows={rows} selected={selected} height={listHeight} empty={query.trim() ? "Nothing found." : "Loading…"} />
-      </Viewfinder>
-    );
-    const row = rows[selected];
-    pane = row ? <TitlePane title={row.title} /> : null;
-  } else if (screen.kind === "episodes") {
-    listPanel = (
-      <Viewfinder title={screen.anime ? "Episodes" : `Season ${screen.season}`} count={screen.list.length} width={listWidth} height={panelHeight} focused>
-        <EpisodeList screen={screen} selected={selected} height={listHeight} />
-      </Viewfinder>
-    );
-    const ep = screen.list[selected];
-    pane = ep ? <EpisodePane show={screen.title} episode={ep} anime={Boolean(screen.anime)} /> : null;
-  } else if (screen.kind === "sources") {
-    const count = screen.report ? screen.report.torrents.length : undefined;
-    listPanel = (
-      <Viewfinder title="Sources" count={count} width={listWidth} height={panelHeight} focused>
-        <SourceList screen={screen} entries={sourceList} selected={selected} height={listHeight} couch={Boolean(couch)} />
-      </Viewfinder>
-    );
-    pane = picked && "torrent" in picked ? <SourcePane torrent={picked.torrent} pick={picked.pick} poster={screen.wanted.title.poster} couch={Boolean(couch)} /> : null;
-  } else {
-    listPanel = (
-      <Viewfinder title={couch ? "On in the room" : "Now playing"} width={rightWidth} height={panelHeight} focused>
-        <Playing screen={screen} couch={couch} upload={uploadRate(uploads.current)} barWidth={Math.min(48, rightWidth - 30)} />
-      </Viewfinder>
-    );
-  }
+  // The big poster's height grows with the terminal; the small ones are 3/5 of it.
+  const big = posterSize(Math.max(8, Math.min(22, height - 17)));
+  const small = posterSize(Math.round(big.rows * 0.6));
+  const stageHeight = height - 5; // header 2, hints 2, a spare row
 
   const hints: Hint[] =
     screen.kind === "browse"
-      ? [["type", "search"], ["↑↓", "move"], ["tab", "section"], ["⏎", "open"], ["esc", query ? "clear" : "home"], ["?", "keys"]]
+      ? [["←→", "browse"], ["⏎", "sources"], ["tab", "continue · now showing · shows"], ["type", "search"], ["esc", query ? "clear" : "home"]]
       : screen.kind === "episodes"
-        ? [["←→", "season"], ["↑↓", "episode"], ["⏎", "sources"], ["esc", "back"]]
+        ? [["↑↓", "episode"], ["←→", "season"], ["⏎", "sources"], ["esc", "back"]]
         : screen.kind === "sources"
           ? [["↑↓", "move"], ["⏎", couch ? "put it on in the room" : "play"], ["esc", "back"]]
           : couch
             ? [["c", "copy the room link"], ["esc", "take the film off"]]
             : [["esc", "stop"]];
 
-  const tabs = [
-    ...SECTIONS.map((s) => ({ label: s, count: s === "Continue" ? home.Continue.length : undefined })),
-    { label: "Search", count: query.trim() ? results.length : undefined },
-  ];
-  const active = screen.kind === "browse" ? (query.trim() ? "Search" : section) : "";
+  let body = null;
+  if (showHelp) {
+    body = <Help />;
+  } else if (screen.kind === "browse") {
+    const label = query.trim() ? (busy ? "searching…" : `${rows.length} results`) : `${rows.length} ${section === "Shows" ? "shows" : section === "Continue" ? "to continue" : "films"}`;
+    body = <Lobby rows={rows} selected={selected} width={inner} big={big} small={small} label={label} empty={query.trim() ? "Nothing found." : "Loading…"} />;
+  } else if (screen.kind === "episodes") {
+    body = (
+      <Stage poster={screen.title.poster} big={big}>
+        <EpisodeList screen={screen} selected={selected} height={stageHeight} />
+      </Stage>
+    );
+  } else if (screen.kind === "sources") {
+    body = (
+      <Stage poster={screen.wanted.title.poster} big={big}>
+        <SourceList screen={screen} entries={sourceList} selected={selected} height={stageHeight} couch={Boolean(couch)} picked={picked} />
+      </Stage>
+    );
+  } else {
+    body = (
+      <Stage poster={screen.title?.poster ?? ""} big={big}>
+        <Playing screen={screen} couch={couch} upload={uploadRate(uploads.current)} barWidth={Math.min(60, inner - big.cols - 6)} />
+      </Stage>
+    );
+  }
 
   return (
     <Box flexDirection="column" paddingX={1} height={height}>
-      <Box justifyContent="space-between">
-        <Marquee />
+      <Box justifyContent="space-between" flexShrink={0}>
+        <Text wrap="truncate">
+          <Text color={C.accent} bold>
+            flick
+          </Text>
+          {"   "}
+          {SECTIONS.map((name) => {
+            const on = screen.kind === "browse" && !query.trim() && name === section;
+            return (
+              <Text key={name} color={on ? C.accent : C.mute} bold={on} underline={on}>
+                {name.toLowerCase()}
+                {"   "}
+              </Text>
+            );
+          })}
+        </Text>
+        {screen.kind === "browse" ? (
+          <Text>
+            <Text color={C.accent}>⌕ </Text>
+            {query ? (
+              <Text color={C.text}>
+                {query}
+                <Text color={C.accent}>▌</Text>
+              </Text>
+            ) : (
+              <Text color={C.mute}>type to search</Text>
+            )}
+          </Text>
+        ) : (
+          <Text color={C.mute} wrap="truncate">
+            {screen.kind === "episodes" ? screen.title.name : screen.label}
+          </Text>
+        )}
+      </Box>
+
+      <Box marginTop={1} flexGrow={1} flexDirection="column" overflow="hidden">
+        {body}
+      </Box>
+
+      <Box justifyContent="space-between" flexShrink={0}>
+        <Hints hints={hints} message={busy && screen.kind !== "browse" ? busy : undefined} />
         <Status couch={couch} engine={props.engine.name} player={props.player} />
       </Box>
-      <Tabs tabs={tabs} active={active} />
-
-      <Box marginTop={1} flexGrow={1}>
-        <Box flexDirection="column" width={rightWidth}>
-          <Viewfinder title="Search" width={rightWidth} focused={screen.kind === "browse"}>
-            <Text wrap="truncate">
-              <Text color={C.accent}>▸ </Text>
-              {screen.kind === "browse" ? searchText : <Text color={C.text}>{screen.kind === "episodes" ? screen.title.name : screen.label}</Text>}
-            </Text>
-          </Viewfinder>
-          <Box marginTop={1}>
-            {listPanel}
-            {detailsWidth && pane && !showHelp && screen.kind !== "playing" ? (
-              <Box marginLeft={2}>
-                <Viewfinder title="Details" width={detailsWidth} height={panelHeight}>
-                  {pane}
-                </Viewfinder>
-              </Box>
-            ) : null}
-          </Box>
-        </Box>
-      </Box>
-
-      <Tickets hints={hints} message={busy} />
     </Box>
   );
 }
@@ -622,83 +613,113 @@ function SectionHeading({ text }: { text: string }) {
   );
 }
 
-/** The poster, or the space it will fill once it has loaded. Nothing at all in
- *  terminals that can't show pictures. */
-function Poster({ url }: { url: string }) {
+type Size = { cols: number; rows: number };
+
+/** A poster at `size` cells. Where the terminal can't show pictures it is a
+ *  card with the title on it; while it loads, an empty card. */
+function Poster({ url, size, name = "", on = false }: { url: string; size: Size; name?: string; on?: boolean }) {
   const [, bump] = useState(0);
   useEffect(() => {
-    if (!POSTERS || !url || posterId(url)) return;
-    const timer = setTimeout(() => loadPoster(url).then(() => bump((n) => n + 1)), 150);
+    if (!POSTERS || !url || posterId(url, size.cols, size.rows)) return;
+    const timer = setTimeout(() => loadPoster(url, size.cols, size.rows).then(() => bump((n) => n + 1)), 120);
     return () => clearTimeout(timer);
-  }, [url]);
-  if (!POSTERS) return null;
-  const id = url ? posterId(url) : null;
+  }, [url, size.cols, size.rows]);
+  const id = POSTERS && url ? posterId(url, size.cols, size.rows) : null;
+  if (id) {
+    return (
+      <Box flexDirection="column" width={size.cols} height={size.rows} flexShrink={0}>
+        {placeholderLines(id, size.cols, size.rows).map((line, i) => (
+          <Text key={i}>{line}</Text>
+        ))}
+      </Box>
+    );
+  }
   return (
-    <Box flexDirection="column" width={POSTER_COLS} height={POSTER_ROWS} flexShrink={0} marginRight={2}>
-      {id ? placeholderLines(id, POSTER_COLS, POSTER_ROWS).map((line, i) => <Text key={i}>{line}</Text>) : <Text color={C.mute}>{url ? "" : "no poster"}</Text>}
+    <Box width={size.cols} height={size.rows} flexShrink={0} borderStyle="round" borderColor={on ? C.accent : C.rule} justifyContent="center" alignItems="center" paddingX={1}>
+      <Text color={on ? C.text : C.mute}>{POSTERS ? "" : name}</Text>
     </Box>
   );
 }
 
-function TitleList({ rows, selected, height, empty }: { rows: TitleRow[]; selected: number; height: number; empty: string }) {
+/** Browse: a wall of posters, the highlighted one big at the left, and what
+ *  it is underneath. */
+function Lobby({ rows, selected, width, big, small, label, empty }: { rows: TitleRow[]; selected: number; width: number; big: Size; small: Size; label: string; empty: string }) {
   if (!rows.length) return <Text color={C.mute}>{empty}</Text>;
-  const [from, to] = windowOf(rows.length, selected, height);
-  const numberWidth = Math.max(2, String(rows.length).length);
+  const fit = Math.max(1, 1 + Math.floor((width - big.cols - 2) / (small.cols + 2)));
+  const shown = rows.slice(selected, selected + fit);
+  const row = rows[selected];
   return (
     <Box flexDirection="column">
-      <Columns>
-        {"  "}
-        {"#".padStart(numberWidth)} Title
-      </Columns>
-      {rows.slice(from, to).map((row, i) => {
-        const on = from + i === selected;
-        const t = row.title;
-        return (
-          <Box key={t.id + row.note} flexShrink={0}>
-            <Pointer on={on} />
-            <Text wrap="truncate">
-              <Text color={C.mute}>{String(from + i + 1).padStart(numberWidth)} </Text>
-              <Text color={on ? C.accent : C.text} bold={on}>
-                {t.name}
-              </Text>
-              <Text color={C.mute}>{t.year ? `  ${t.year}` : ""}</Text>
-              {isSeries(t) ? <Text color={C.warn}>{"  series"}</Text> : null}
-              {row.note ? <Text color={C.good}>{`  ${row.note}`}</Text> : null}
-            </Text>
-          </Box>
-        );
-      })}
+      <Text color={C.mute}>
+        {label}
+        <Text color={C.rule}>{`   ${selected + 1} of ${rows.length}`}</Text>
+      </Text>
+      <Box marginTop={1} flexShrink={0}>
+        {shown.map((r, i) => {
+          const size = i === 0 ? big : small;
+          return (
+            <Box key={r.title.id + r.note} flexDirection="column" width={size.cols} marginRight={2} flexShrink={0}>
+              {i === 0 ? null : <Box height={big.rows - small.rows} flexShrink={0} />}
+              <Poster url={r.title.poster} size={size} name={i === 0 ? r.title.name : ""} on={i === 0} />
+              {i === 0 ? (
+                <Text color={C.accent}>{"▔".repeat(size.cols)}</Text>
+              ) : (
+                <>
+                  <Text color={C.mute} wrap="truncate">
+                    {r.title.name}
+                  </Text>
+                  <Text color={C.rule} wrap="truncate">
+                    {r.title.year ?? ""}
+                    {isSeries(r.title) ? " · series" : ""}
+                  </Text>
+                </>
+              )}
+            </Box>
+          );
+        })}
+      </Box>
+      <About title={row.title} note={row.note} width={width} />
     </Box>
   );
 }
 
-function TitlePane({ title }: { title: Title }) {
+/** The highlighted title: name, facts, people, plot. */
+function About({ title, note, width }: { title: Title; note: string; width: number }) {
   const d = useDetails(title.id);
-  const facts = [title.year, isSeries(title) ? "series" : null, d?.minutes ? `${d.minutes} min` : null].filter(Boolean);
+  const facts = [title.year, isSeries(title) ? "series" : null, d?.minutes ? `${d.minutes} min` : null, d?.genres.join(", ")].filter(Boolean);
+  return (
+    <Box flexDirection="column" marginTop={1} width={Math.min(width, 110)} flexShrink={0}>
+      <Text wrap="truncate">
+        <Text color={C.accent} bold>
+          {title.name.toUpperCase()}
+        </Text>
+        <Text color={C.mute}>{"   " + facts.join(" · ")}</Text>
+        {note ? <Text color={C.good}>{"   " + note}</Text> : null}
+      </Text>
+      <Text wrap="truncate">
+        <Text color={C.text}>{d?.directors.join(", ") ?? " "}</Text>
+        <Text color={C.mute}>{d?.directors.length && d.cast.length ? " · " : ""}</Text>
+        <Text color={C.mute}>{d?.cast.join(", ") ?? ""}</Text>
+      </Text>
+      <Box marginTop={1} height={3} overflow="hidden">
+        <Text color={C.text}>{d ? d.plot : ""}</Text>
+      </Box>
+    </Box>
+  );
+}
+
+/** Every screen after browse: the big poster at the left, the screen's own
+ *  content beside it. Without pictures the content takes the whole width. */
+function Stage({ poster, big, children }: { poster: string; big: Size; children: ReactNode }) {
   return (
     <Box flexShrink={0}>
-      <Poster url={title.poster} />
-      <Box flexDirection="column" flexGrow={1}>
-        <Text color={C.accent} bold>
-          {title.name}
-        </Text>
-        <Text color={C.mute}>{facts.join(" · ")}</Text>
-        {d?.genres.length ? <Text color={C.warn}>{d.genres.join(" · ")}</Text> : null}
-        {d?.directors.length ? (
-          <Box marginTop={1} flexDirection="column">
-            <Text color={C.mute}>directed by</Text>
-            <Text color={C.text}>{d.directors.join(", ")}</Text>
-          </Box>
-        ) : null}
-        {d?.cast.length ? (
-          <Box marginTop={1} flexDirection="column">
-            <Text color={C.mute}>with</Text>
-            <Text color={C.text}>{d.cast.join(", ")}</Text>
-          </Box>
-        ) : null}
-        <Box marginTop={1}>
-          <Text color={C.text}>{d ? d.plot || "IMDb has no plot for this one." : ""}</Text>
+      {POSTERS && poster ? (
+        <Box marginRight={3} flexShrink={0}>
+          <Poster url={poster} size={big} on />
         </Box>
+      ) : null}
+      <Box flexDirection="column" flexGrow={1}>
+        {children}
       </Box>
     </Box>
   );
@@ -706,9 +727,14 @@ function TitlePane({ title }: { title: Title }) {
 
 function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { kind: "episodes" }>; selected: number; height: number }) {
   const seen = new Set(loadHistory().find((w) => w.id === screen.title.id)?.seen ?? []);
-  const [from, to] = windowOf(screen.list.length, selected, height - 1);
+  const [from, to] = windowOf(screen.list.length, selected, Math.max(3, height - 9));
+  const ep = screen.list[selected];
+  const facts = ep ? [ep.date, ep.minutes ? `${ep.minutes} min` : null].filter(Boolean) : [];
   return (
     <Box flexDirection="column">
+      <Text color={C.accent} bold wrap="truncate">
+        {screen.title.name.toUpperCase()}
+      </Text>
       <Text wrap="truncate">
         {screen.anime ? (
           <Text color={C.mute}>
@@ -716,49 +742,44 @@ function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { k
           </Text>
         ) : (
           screen.seasons.map((s) => (
-            <Text key={s} color={s === screen.season ? C.accent : C.mute} bold={s === screen.season}>
-              {s === screen.season ? `[${s}]` : ` ${s} `}{" "}
+            <Text key={s} color={s === screen.season ? C.accent : C.mute} bold={s === screen.season} underline={s === screen.season}>
+              {`season ${s}`}
+              <Text>{"   "}</Text>
             </Text>
           ))
         )}
       </Text>
-      {screen.list.slice(from, to).map((ep, i) => {
-        const on = from + i === selected;
-        const tag = sxxeyy(ep.season, ep.number);
-        return (
-          <Box key={tag} flexShrink={0}>
-            <Pointer on={on} />
-            <Text wrap="truncate">
-              <Text color={C.mute}>{screen.anime ? String(ep.number).padStart(3) : tag} </Text>
-              <Text color={seen.has(tag) ? C.good : C.mute}>{seen.has(tag) ? "✓ " : "  "}</Text>
-              <Text color={on ? C.accent : C.text} bold={on}>
-                {ep.name || `Episode ${ep.number}`}
+      <Box marginTop={1} flexDirection="column">
+        {screen.list.slice(from, to).map((e, i) => {
+          const on = from + i === selected;
+          const tag = sxxeyy(e.season, e.number);
+          return (
+            <Box key={tag} flexShrink={0}>
+              <Pointer on={on} />
+              <Text wrap="truncate">
+                <Text color={C.mute}>{screen.anime ? String(e.number).padStart(3) : tag} </Text>
+                <Text color={seen.has(tag) ? C.good : C.mute}>{seen.has(tag) ? "✓ " : "  "}</Text>
+                <Text color={on ? C.accent : C.text} bold={on}>
+                  {e.name || `Episode ${e.number}`}
+                </Text>
               </Text>
-            </Text>
-          </Box>
-        );
-      })}
-    </Box>
-  );
-}
-
-function EpisodePane({ show, episode, anime }: { show: Title; episode: Episode; anime: boolean }) {
-  const facts = [episode.date, episode.minutes ? `${episode.minutes} min` : null].filter(Boolean);
-  return (
-    <Box flexShrink={0}>
-      <Poster url={show.poster} />
-      <Box flexDirection="column" flexGrow={1}>
-        <Text color={C.mute}>{anime ? `episode ${episode.number}` : sxxeyy(episode.season, episode.number)}</Text>
-        <Text color={C.accent} bold>
-          {episode.name || `Episode ${episode.number}`}
-        </Text>
-        {facts.length ? <Text color={C.mute}>{facts.join(" · ")}</Text> : null}
-        {episode.plot ? (
-          <Box marginTop={1}>
-            <Text color={C.text}>{episode.plot}</Text>
-          </Box>
-        ) : null}
+            </Box>
+          );
+        })}
       </Box>
+      {ep ? (
+        <Box marginTop={1} flexDirection="column" flexShrink={0}>
+          <Text wrap="truncate">
+            <Text color={C.text} bold>
+              {ep.name || `Episode ${ep.number}`}
+            </Text>
+            <Text color={C.mute}>{facts.length ? "   " + facts.join(" · ") : ""}</Text>
+          </Text>
+          <Box height={3} overflow="hidden">
+            <Text color={C.mute}>{ep.plot}</Text>
+          </Box>
+        </Box>
+      ) : null}
     </Box>
   );
 }
@@ -786,20 +807,30 @@ function SourceList({
   selected,
   height,
   couch,
+  picked,
 }: {
   screen: Extract<Screen, { kind: "sources" }>;
   entries: SourceEntry[];
   selected: number;
   height: number;
   couch: boolean;
+  picked: SourceEntry | undefined;
 }) {
   const report = screen.report;
   const asking = !report || report.sites.some((s) => s.state === "asking");
-  const [from, to] = windowOf(entries.length, selected, height - 1); // the site line takes one
+  const [from, to] = windowOf(entries.length, selected, Math.max(3, height - 10));
+  const t = picked && "torrent" in picked ? picked.torrent : null;
+  const q = t ? parseQuality(t.name) : null;
+  const audio = t ? audioLabel(t.name) : "";
   return (
     <Box flexDirection="column">
+      <Text color={C.accent} bold wrap="truncate">
+        {screen.label.toUpperCase()}
+      </Text>
       {report ? <SiteLine sites={report.sites} hidden={screen.hidden} /> : <Text color={C.accent}>asking the sites…</Text>}
-      <Columns>{"  Seeds      Size  Quality                Src"}</Columns>
+      <Box marginTop={1}>
+        <Columns>{"  Seeds      Size  Quality                Src"}</Columns>
+      </Box>
       {!entries.length && !asking ? (
         <Text color={C.warn}>
           {couch ? "No release every browser can play (MP4, H.264) for this one; plain flick still plays it. " : ""}No sources found.
@@ -808,56 +839,37 @@ function SourceList({
       {entries.slice(from, to).map((entry, i) => {
         if ("heading" in entry) return <SectionHeading key={entry.heading} text={entry.heading} />;
         const on = from + i === selected;
-        const t = entry.torrent;
-        const tag = sourceTag(t.source);
+        const s = entry.torrent;
+        const tag = sourceTag(s.source);
         return (
-          <Box key={t.infoHash + (entry.pick ? "pick" : "")} flexShrink={0}>
+          <Box key={s.infoHash + (entry.pick ? "pick" : "")} flexShrink={0}>
             <Pointer on={on} />
             <Text wrap="truncate">
-              <Text color={t.seeders > 20 ? C.good : t.seeders > 0 ? C.warn : C.bad}>{String(t.seeders).padStart(5)}</Text>
-              <Text color={C.mute}>{humanSize(t.bytes).padStart(10)}  </Text>
+              <Text color={s.seeders > 20 ? C.good : s.seeders > 0 ? C.warn : C.bad}>{String(s.seeders).padStart(5)}</Text>
+              <Text color={C.mute}>{humanSize(s.bytes).padStart(10)}  </Text>
               <Text color={on ? C.accent : C.text} bold={on}>
-                {qualityLabel(t.name).slice(0, 22).padEnd(23)}
+                {qualityLabel(s.name).slice(0, 22).padEnd(23)}
               </Text>
               <Text color={SOURCE_COLOR[tag] ?? C.mute}>{tag}</Text>
             </Text>
           </Box>
         );
       })}
-    </Box>
-  );
-}
-
-function SourcePane({ torrent, pick, poster, couch }: { torrent: Torrent; pick: boolean; poster: string; couch: boolean }) {
-  const q = parseQuality(torrent.name);
-  const audio = audioLabel(torrent.name);
-  const playable = browserPlayable(torrent.name);
-  return (
-    <Box flexShrink={0}>
-      <Poster url={poster} />
-      <Box flexDirection="column" flexGrow={1}>
-        {pick ? <Text color={C.accent}>◆ flick's pick</Text> : null}
-        <Text color={C.text} bold>
-          {torrent.name}
-        </Text>
-        <Box marginTop={1}>
-          <Text color={C.mute}>
-            {humanSize(torrent.bytes)} · {torrent.seeders} seeders · {sourceTag(torrent.source)}
+      {t && q ? (
+        <Box marginTop={1} flexDirection="column" flexShrink={0}>
+          <Text color={C.text} wrap="truncate">
+            {t.name}
+          </Text>
+          <Text wrap="truncate">
+            <Text color={C.mute}>{[q.res, q.hdr, q.codec, q.src].filter(Boolean).join(" · ") || "quality not in the name"}</Text>
+            <Text color={C.mute}>{audio ? `  ·  audio ${audio}` : ""}</Text>
+          </Text>
+          <Text wrap="truncate">
+            {picked && "pick" in picked && picked.pick ? <Text color={C.accent}>◆ flick's pick: 1080p x264 under 6 GB, the most seeders   </Text> : null}
+            {couch ? null : browserPlayable(t.name) ? <Text color={C.good}>✓ works in flick couch</Text> : <Text color={C.rule}>not for flick couch</Text>}
           </Text>
         </Box>
-        <Text color={C.warn}>{[q.res, q.hdr, q.codec, q.src].filter(Boolean).join(" · ") || "quality not in the name"}</Text>
-        {audio ? <Text color={C.text}>audio {audio}</Text> : null}
-        {couch ? null : (
-          <Box marginTop={1}>
-            <Text color={playable ? C.good : C.mute}>{playable ? "✓ works in flick couch" : "not for flick couch: browsers can't play it"}</Text>
-          </Box>
-        )}
-        {pick ? (
-          <Box marginTop={1}>
-            <Text color={C.mute}>picked for 1080p x264 under 6 GB, with the most seeders</Text>
-          </Box>
-        ) : null}
-      </Box>
+      ) : null}
     </Box>
   );
 }
@@ -867,7 +879,6 @@ function Playing({ screen, couch, upload, barWidth }: { screen: Extract<Screen, 
   const p = screen.progress;
   return (
     <Box flexShrink={0}>
-      {screen.title ? <Poster url={screen.title.poster} /> : null}
       <Box flexDirection="column" flexGrow={1}>
         <Text color={C.accent} bold>
           {screen.label}

@@ -1,10 +1,9 @@
 // flick's visual pieces, themed as a cinema: a marquee sign with chasing
-// bulbs, viewfinder panels, programme tabs, a film-strip progress bar and
-// ticket-stub key hints. Colours are flick's neon cyan (the couch room page's)
-// with warm marquee bulbs.
+// bulbs for the splash, a film-strip progress bar, and the key hints.
+// Colours are flick's neon cyan (the couch room page's) with warm bulbs.
 
 import { Box, Text } from "ink";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 export const C = {
   accent: "#3DF5FF", // couch's cyan
@@ -100,64 +99,6 @@ export function Marquee({ chase = false }: { chase?: boolean }) {
   );
 }
 
-// ---------- viewfinder panels ----------
-
-/** A panel in a thin square frame, its title set into the top line:
- *  ┌─ Title · 3 ───────┐ */
-export function Viewfinder(props: { title: string; count?: number; width: number; height?: number; focused?: boolean; children: ReactNode }) {
-  const line = props.focused ? C.accent : C.rule;
-  const label = props.count === undefined ? props.title : `${props.title} · ${props.count}`;
-  const rest = Math.max(0, props.width - 3 - label.length - 2);
-  return (
-    <Box flexDirection="column" width={props.width} flexShrink={0}>
-      <Text wrap="truncate">
-        <Text color={line}>{"┌─ "}</Text>
-        <Text color={props.focused ? C.accent : C.text} bold>
-          {label}
-        </Text>
-        <Text color={line}>{` ${"─".repeat(rest)}┐`}</Text>
-      </Text>
-      <Box
-        flexDirection="column"
-        borderStyle="single"
-        borderTop={false}
-        borderColor={line}
-        paddingX={1}
-        height={props.height === undefined ? undefined : Math.max(2, props.height - 1)}
-        overflow="hidden"
-      >
-        {props.children}
-      </Box>
-    </Box>
-  );
-}
-
-// ---------- programme tabs ----------
-
-/** The home screen's sections, like a cinema programme: the showing one lit. */
-export function Tabs({ tabs, active }: { tabs: { label: string; count?: number }[]; active: string }) {
-  return (
-    <Text wrap="truncate">
-      {tabs.map((tab, i) => {
-        const on = tab.label === active;
-        const text = ` ${tab.label.toUpperCase()}${tab.count ? ` ${tab.count}` : ""} `;
-        return (
-          <Text key={tab.label}>
-            {i ? <Text color={C.rule}> · </Text> : null}
-            {on ? (
-              <Text backgroundColor={C.accent} color={C.ink} bold>
-                {text}
-              </Text>
-            ) : (
-              <Text color={C.mute}>{text}</Text>
-            )}
-          </Text>
-        );
-      })}
-    </Text>
-  );
-}
-
 // ---------- the film strip ----------
 
 /** A download shown as a strip of film: one frame per 3 columns, frames filling
@@ -187,12 +128,13 @@ export function FilmStrip({ percent, width, rolling }: { percent: number; width:
   );
 }
 
-// ---------- ticket-stub key hints ----------
+// ---------- key hints ----------
 
 export type Hint = [keys: string, label: string];
 
-/** Key hints as little tickets: the key on a cyan stub, then what it does. */
-export function Tickets({ hints, message }: { hints: Hint[]; message?: string }) {
+/** Key hints along the bottom: the key in cyan, what it does in grey. A
+ *  message, when there is one, takes their place. */
+export function Hints({ hints, message }: { hints: Hint[]; message?: string }) {
   if (message) {
     return (
       <Text color={C.accent} wrap="truncate">
@@ -204,9 +146,9 @@ export function Tickets({ hints, message }: { hints: Hint[]; message?: string })
     <Text wrap="truncate">
       {hints.map(([keys, label], i) => (
         <Text key={keys + label}>
-          {i ? "  " : ""}
-          <Text backgroundColor={C.accent} color={C.ink} bold>
-            {` ${keys} `}
+          {i ? "    " : ""}
+          <Text color={C.accent} bold>
+            {keys}
           </Text>
           <Text color={C.mute}> {label}</Text>
         </Text>
