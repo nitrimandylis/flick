@@ -59,6 +59,17 @@ export function posterId(url: string, cols: number, rows: number): number | null
   return shown.get(`${url}|${cols}|${rows}`) ?? null;
 }
 
+// Each poster's colour, lifted so it reads on the dark background (see tintFrom).
+const tints = new Map<string, string>(); // poster URL -> "#RRGGBB"
+
+/** A poster's colour, once it has loaded, or null. */
+export function posterTint(url: string): string | null {
+  return tints.get(url) ?? null;
+}
+
+// Called whenever a poster finishes loading, so the screen can redraw.
+export const posterEvents = { onReady: () => {} };
+
 /** Fetch a poster, convert it, and send it to the terminal. Resolves once it
  *  can be drawn (or quietly never, if anything fails). */
 export async function loadPoster(url: string, cols: number, rows: number): Promise<void> {
@@ -67,9 +78,11 @@ export async function loadPoster(url: string, cols: number, rows: number): Promi
   loading.add(key);
   try {
     const png = await posterPng(url);
+    if (!tints.has(url)) tints.set(url, await posterColour(png));
     const id = nextId++;
-    sendPicture(id, png, cols, rows);
+    sendPicture(id, readFileSync(png), cols, rows);
     shown.set(key, id);
+    posterEvents.onReady();
   } catch {
     // no poster for this one
   } finally {
@@ -77,8 +90,60 @@ export async function loadPoster(url: string, cols: number, rows: number): Promi
   }
 }
 
-/** The poster as PNG, from the cache folder or downloaded and converted once. */
-async function posterPng(url: string): Promise<Buffer> {
+/** A poster's average colour as a readable accent, worked out once and kept
+ *  next to the poster. `sips` shrinks it to one pixel, saved as a BMP: an
+ *  uncompressed format whose pixel bytes are easy to read. */
+async function posterColour(png: string): Promise<string> {
+  const saved = png.replace(/\.png$/, ".tint");
+  if (existsSync(saved)) return readFileSync(saved, "utf-8");
+  const bmp = png.replace(/\.png$/, ".bmp");
+  await run("sips", ["-s", "format", "bmp", "-z", "1", "1", png, "--out", bmp]);
+  const data = readFileSync(bmp);
+  rmSync(bmp, { force: true });
+  const at = data.readUInt32LE(10); // where the pixels start; stored blue, green, red
+  const tint = tintFrom(data[at + 2], data[at + 1], data[at]);
+  writeFileSync(saved, tint);
+  return tint;
+}
+
+/** A colour turned into an accent that reads on a near-black background: the
+ *  same hue, lightness lifted to 0.62-0.8, a little saturation added unless it
+ *  is grey. Pure. */
+export function tintFrom(r: number, g: number, b: number): string {
+  // to hue, saturation, lightness (all 0-1)
+  const [rf, gf, bf] = [r / 255, g / 255, b / 255];
+  const max = Math.max(rf, gf, bf);
+  const min = Math.min(rf, gf, bf);
+  let l = (max + min) / 2;
+  let s = 0;
+  let h = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === rf) h = (gf - bf) / d + (gf < bf ? 6 : 0);
+    else if (max === gf) h = (bf - rf) / d + 2;
+    else h = (rf - gf) / d + 4;
+    h /= 6;
+  }
+  l = Math.min(0.8, Math.max(0.62, l));
+  if (s > 0.08) s = Math.max(0.5, s);
+  // back to red, green, blue
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const channel = (t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  const hex = (x: number) => Math.round(x * 255).toString(16).padStart(2, "0");
+  return `#${hex(channel(h + 1 / 3))}${hex(channel(h))}${hex(channel(h - 1 / 3))}`.toUpperCase();
+}
+
+/** The poster as a PNG file, from the cache folder or downloaded and converted once. */
+async function posterPng(url: string): Promise<string> {
   mkdirSync(POSTER_DIR, { recursive: true });
   // IMDb's image server resizes on request: 400 px wide is sharp at these
   // sizes and quick to convert and send.
@@ -93,7 +158,7 @@ async function posterPng(url: string): Promise<Buffer> {
     await run("sips", ["-s", "format", "png", jpg, "--out", png]);
     rmSync(jpg, { force: true });
   }
-  return readFileSync(png);
+  return png;
 }
 
 /** Send a PNG to the terminal as picture `id`, with a virtual placement of

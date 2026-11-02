@@ -156,3 +156,53 @@ export function Hints({ hints, message }: { hints: Hint[]; message?: string }) {
     </Text>
   );
 }
+
+// ---------- small pieces ----------
+
+/** A small coloured chip: ` 4K `, ` YTS `. */
+export function Badge({ text, color }: { text: string; color: string }) {
+  return (
+    <Text backgroundColor={color} color={C.ink} bold>
+      {` ${text} `}
+    </Text>
+  );
+}
+
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+/** A braille spinner, turning only while it is on screen. */
+export function Spinner({ color = C.accent }: { color?: string }) {
+  const tick = useTick(90, true);
+  return <Text color={color}>{SPINNER[tick % SPINNER.length]}</Text>;
+}
+
+/** A label in spaced capitals: "director" -> "D I R E C T O R". Pure. */
+export function spaced(label: string): string {
+  return label.toUpperCase().split("").join(" ");
+}
+
+/** Which rows of a `height`-row scrollbar are the thumb, for a list of `total`
+ *  rows showing `visible` of them from `from`. No thumb when it all fits. Pure. */
+export function thumbRows(total: number, from: number, visible: number, height: number): boolean[] {
+  const rows = new Array<boolean>(height).fill(false);
+  if (total <= visible || height <= 0) return rows;
+  const size = Math.max(1, Math.round((visible / total) * height));
+  const start = Math.min(height - size, Math.round((from / (total - visible)) * (height - size)));
+  for (let i = start; i < start + size; i++) rows[i] = true;
+  return rows;
+}
+
+/** A thin scrollbar: a dim track with a bright thumb. */
+export function Scrollbar({ total, from, visible, height }: { total: number; from: number; visible: number; height: number }) {
+  const thumb = thumbRows(total, from, visible, height);
+  if (!thumb.some(Boolean)) return null;
+  return (
+    <Box flexDirection="column" marginLeft={1} flexShrink={0}>
+      {thumb.map((on, i) => (
+        <Text key={i} color={on ? C.accent : C.rule}>
+          {on ? "┃" : "│"}
+        </Text>
+      ))}
+    </Box>
+  );
+}

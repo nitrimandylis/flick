@@ -6,9 +6,9 @@ import { playerPage } from "./players.ts";
 import { parseYifyEnglish, srtToVtt } from "./subtitles.ts";
 import { parseDetails, parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
 import { audioLabel, browserPlayable, hashOf, matchesShow, pickBest, qualityLabel, withTrackers, type Torrent } from "./torrents.ts";
-import { clock, continueRows, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
-import { bulbPath, mix } from "./look.tsx";
-import { placeholderLines } from "./poster.ts";
+import { clock, continueRows, resolutionLabel, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
+import { bulbPath, mix, spaced, thumbRows } from "./look.tsx";
+import { placeholderLines, tintFrom } from "./poster.ts";
 import { trimCache } from "./store.ts";
 import { applySet, crossedToggle, currentTime, emptyState } from "./room.ts";
 import { mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
@@ -238,5 +238,33 @@ describe("tui", () => {
     expect(lines[0]).toBe("\x1b[38;2;0;0;7m\u{10EEEE}\u0305\u0305\u{10EEEE}\u{10EEEE}\x1b[39m");
     expect(placeholderLines(0x123456, 1, 1)[0].startsWith("\x1b[38;2;18;52;86m")).toBe(true); // id in the 24-bit colour
     expect(lines[1].includes("\u{10EEEE}\u030D\u0305")).toBe(true);
+  });
+});
+
+describe("polish", () => {
+  test("a poster's colour becomes a readable accent", () => {
+    // dark sand stays sand-coloured but bright enough for a black background
+    const sand = tintFrom(84, 73, 50);
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(sand.slice(i, i + 2), 16));
+    expect(r > g && g > b).toBe(true); // same hue order
+    expect((Math.max(r, g, b) + Math.min(r, g, b)) / 2 / 255).toBeGreaterThanOrEqual(0.61);
+    // grey stays grey
+    const grey = tintFrom(40, 40, 40);
+    expect(grey.slice(1, 3)).toBe(grey.slice(3, 5));
+  });
+
+  test("scrollbar thumb sits where the window is", () => {
+    expect(thumbRows(10, 0, 10, 10).some(Boolean)).toBe(false); // it all fits
+    const top = thumbRows(100, 0, 10, 10);
+    const bottom = thumbRows(100, 90, 10, 10);
+    expect(top[0]).toBe(true);
+    expect(bottom[9]).toBe(true);
+    expect(top.filter(Boolean).length).toBe(1);
+  });
+
+  test("labels and badges", () => {
+    expect(spaced("cast")).toBe("C A S T");
+    expect(resolutionLabel("2160p")).toBe("4K");
+    expect(resolutionLabel("")).toBe("SD");
   });
 });
