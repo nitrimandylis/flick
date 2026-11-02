@@ -1,8 +1,7 @@
-// flick's visual pieces: the logo, panels, the progress bar, the key hints.
-// The look follows torlink (github.com/baairon/torlink, MIT): a gradient
-// block logo with one accent glyph, panels titled in their border, a sheen
-// that sweeps across the progress bar. Colours are flick's own neon cyan,
-// the same as the couch room page.
+// flick's visual pieces, themed as a cinema: a marquee sign with chasing
+// bulbs, letterbox panels, programme tabs, a film-strip progress bar and
+// ticket-stub key hints. Colours are flick's neon cyan (the couch room page's)
+// with warm marquee bulbs.
 
 import { Box, Text } from "ink";
 import { useEffect, useState, type ReactNode } from "react";
@@ -14,159 +13,179 @@ export const C = {
   text: "#E8F1F5",
   mute: "#7D8A9A",
   rule: "#4A5A6E",
-  good: "#86D6A2",
-  warn: "#F0C560",
+  bulb: "#FFD27A", // a lit marquee bulb
+  good: "#7BE3A8",
+  warn: "#FFB86B",
   bad: "#FF3DCB", // couch's magenta
+  ink: "#060A12", // text on a coloured chip
 };
 
-// ---------- colour maths ----------
-
-function rgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.slice(1), 16);
-  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-}
-
-/** The colour `t` of the way from `a` to `b` (t from 0 to 1). Pure. */
-export function lerpHex(a: string, b: string, t: number): string {
-  const [ar, ag, ab] = rgb(a);
-  const [br, bg, bb] = rgb(b);
-  const mix = (x: number, y: number) =>
-    Math.round(x + (y - x) * t)
+/** A colour partway between two "#RRGGBB" colours (`t` from 0 to 1). Pure. */
+export function mix(from: string, to: string, t: number): string {
+  let out = "#";
+  for (let i = 1; i < 7; i += 2) {
+    const a = parseInt(from.slice(i, i + 2), 16);
+    const b = parseInt(to.slice(i, i + 2), 16);
+    out += Math.round(a + (b - a) * t)
       .toString(16)
       .padStart(2, "0");
-  return `#${mix(ar, br)}${mix(ag, bg)}${mix(ab, bb)}`;
+  }
+  return out;
 }
 
-// ---------- the logo ----------
-
-// Row 0 holds the accent glyph, a magenta spark over the I.
-const LOGO = [
-  "        ✦        ",
-  "█▀▀ █   █ █▀▀ █▄▀",
-  "█▀  █▄▄ █ █▄▄ █ █",
-];
-
-/** The logo's sheen: white at the top left, through cyan, to deep blue at the
- *  bottom right. `t` runs from 0 to 1. Pure. */
-function sheen(t: number): string {
-  if (t < 0.15) return lerpHex("#FFFFFF", C.bright, t / 0.15);
-  if (t < 0.45) return lerpHex(C.bright, C.accent, (t - 0.15) / 0.3);
-  return lerpHex(C.accent, C.deep, (t - 0.45) / 0.55);
+/** A number that goes up every `ms` while `on`, for small animations. */
+function useTick(ms: number, on: boolean): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!on) return;
+    const timer = setInterval(() => setTick((n) => n + 1), ms);
+    return () => clearInterval(timer);
+  }, [ms, on]);
+  return tick;
 }
 
-export function Logo() {
+// ---------- the marquee ----------
+
+const WORD = ["█▀▀ █   █ █▀▀ █▄▀", "█▀  █▄▄ █ █▄▄ █ █"];
+const MARQUEE_WIDTH = WORD[0].length + 6; // a bulb, two spaces, the word, two spaces, a bulb
+
+/** Where the bulbs sit around the sign, in order clockwise from the top left,
+ *  as [row, column]. Rows 0 and 3 are the top and bottom edges. Pure. */
+export function bulbPath(width: number): [number, number][] {
+  const path: [number, number][] = [];
+  for (let col = 0; col < width; col += 2) path.push([0, col]); // top, left to right
+  path.push([1, width - 1], [2, width - 1]); // right side, down
+  for (let col = width - 1; col >= 0; col -= 2) path.push([3, col]); // bottom, right to left
+  path.push([2, 0], [1, 0]); // left side, up
+  return path;
+}
+
+/** The flick sign: the word inside a frame of bulbs. With `chase`, every third
+ *  bulb is lit and the lit ones run around the frame. */
+export function Marquee({ chase = false }: { chase?: boolean }) {
+  const tick = useTick(350, chase);
+  const lit = new Map<string, boolean>();
+  bulbPath(MARQUEE_WIDTH).forEach(([row, col], i) => lit.set(`${row},${col}`, (i + (chase ? tick : 0)) % 3 === 0));
+
+  const bulb = (row: number, col: number) => {
+    const on = lit.get(`${row},${col}`);
+    return (
+      <Text key={col} color={on ? C.bulb : C.rule}>
+        {on ? "●" : "○"}
+      </Text>
+    );
+  };
+  const edge = (row: number) => {
+    const cells = [];
+    for (let col = 0; col < MARQUEE_WIDTH; col++) cells.push(col % 2 === 0 || col === MARQUEE_WIDTH - 1 ? bulb(row, col) : <Text key={col}> </Text>);
+    return <Text>{cells}</Text>;
+  };
+
   return (
     <Box flexDirection="column" flexShrink={0}>
-      {LOGO.map((line, row) => (
-        <Box key={row}>
-          {[...line].map((ch, i) => {
-            if (ch === " ") return <Text key={i}> </Text>;
-            if (row === 0) {
-              return (
-                <Text key={i} bold color={C.bad}>
-                  {ch}
-                </Text>
-              );
-            }
-            const across = i / (line.length - 1);
-            const down = row - 1; // 0 or 1
-            return (
-              <Text key={i} bold color={sheen((across + down) / 2)}>
-                {ch}
-              </Text>
-            );
-          })}
-        </Box>
+      {edge(0)}
+      {WORD.map((line, i) => (
+        <Text key={i}>
+          {bulb(i + 1, 0)}
+          {"  "}
+          <Text bold color={i === 0 ? C.bright : C.accent}>
+            {line}
+          </Text>
+          {"  "}
+          {bulb(i + 1, MARQUEE_WIDTH - 1)}
+        </Text>
       ))}
+      {edge(3)}
     </Box>
   );
 }
 
-export function Rule({ width }: { width: number }) {
-  return <Text color={C.rule}>{"─".repeat(Math.max(0, width))}</Text>;
-}
+// ---------- letterbox panels ----------
 
-// ---------- panels ----------
-
-/** A box with its title set into the top border: ╭─ Title (5) ───╮ */
-export function Panel(props: { title: string; count?: number; width: number; height?: number; focused?: boolean; children: ReactNode }) {
-  const color = props.focused ? C.accent : C.rule;
-  const label = props.count === undefined ? props.title : `${props.title} (${props.count})`;
-  const fill = Math.max(0, props.width - 5 - label.length);
+/** A panel framed like a widescreen film: a heavy bar above with the title on
+ *  a chip, a heavy bar below, no sides. */
+export function Letterbox(props: { title: string; count?: number; width: number; height?: number; focused?: boolean; children: ReactNode }) {
+  const bar = props.focused ? C.accent : C.rule;
+  const label = ` ${props.title}${props.count === undefined ? "" : `  ${props.count}`} `;
+  const rest = Math.max(0, props.width - 2 - label.length);
   return (
     <Box flexDirection="column" width={props.width} flexShrink={0}>
       <Text wrap="truncate">
-        <Text color={color}>{"╭─ "}</Text>
-        <Text bold color={props.focused ? C.accent : C.text}>
+        <Text color={bar}>{"▄▄"}</Text>
+        <Text backgroundColor={bar} color={C.ink} bold>
           {label}
         </Text>
-        <Text color={color}>{` ${"─".repeat(fill)}╮`}</Text>
+        <Text color={bar}>{"▄".repeat(rest)}</Text>
       </Text>
-      <Box
-        width={props.width}
-        height={props.height === undefined ? undefined : Math.max(1, props.height - 1)}
-        flexDirection="column"
-        borderStyle="round"
-        borderTop={false}
-        borderColor={color}
-        paddingX={1}
-        overflow="hidden"
-      >
+      <Box flexDirection="column" paddingX={1} height={props.height === undefined ? undefined : Math.max(1, props.height - 2)} overflow="hidden">
         {props.children}
       </Box>
+      <Text color={bar}>{"▀".repeat(props.width)}</Text>
     </Box>
   );
 }
 
-// ---------- the progress bar ----------
+// ---------- programme tabs ----------
 
-// A bright bell sweeps across the filled cells while the download runs.
-const SHEEN_RADIUS = 4.5; // half-width of the bell, in cells
-const SHEEN_GAP = 8; // dark cells between sweeps
-const SHEEN_TICK_MS = 80; // one frame; slower than torlink's 40 ms to spare the battery
-const SHEEN_SPEED = 0.6; // cells per frame
-
-/** How bright cell `i` is when the bell is centred at `center` (0 to 0.9). Pure. */
-export function sheenIntensity(i: number, center: number): number {
-  const d = Math.abs(i - center);
-  if (d >= SHEEN_RADIUS) return 0;
-  return 0.5 * (1 + Math.cos((Math.PI * d) / SHEEN_RADIUS)) * 0.9;
-}
-
-export function ProgressBar({ percent, width, animate }: { percent: number; width: number; animate: boolean }) {
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    if (!animate) return;
-    const timer = setInterval(() => setTick((n) => n + 1), SHEEN_TICK_MS);
-    return () => clearInterval(timer);
-  }, [animate]);
-
-  const filled = Math.round((Math.max(0, Math.min(100, percent)) / 100) * width);
-  const period = width + SHEEN_RADIUS * 2 + SHEEN_GAP;
-  const center = ((tick * SHEEN_SPEED) % period) - SHEEN_RADIUS;
-  const cells = [];
-  for (let i = 0; i < filled; i++) {
-    let color = lerpHex(C.deep, C.accent, i / Math.max(1, width - 1));
-    if (animate) color = lerpHex(color, "#F2FFFF", sheenIntensity(i, center));
-    cells.push(
-      <Text key={i} color={color}>
-        █
-      </Text>,
-    );
-  }
+/** The home screen's sections, like a cinema programme: the showing one lit. */
+export function Tabs({ tabs, active }: { tabs: { label: string; count?: number }[]; active: string }) {
   return (
-    <Text>
-      {cells}
-      <Text color={C.rule}>{"░".repeat(width - filled)}</Text>
+    <Text wrap="truncate">
+      {tabs.map((tab, i) => {
+        const on = tab.label === active;
+        const text = ` ${tab.label.toUpperCase()}${tab.count ? ` ${tab.count}` : ""} `;
+        return (
+          <Text key={tab.label}>
+            {i ? <Text color={C.rule}> · </Text> : null}
+            {on ? (
+              <Text backgroundColor={C.accent} color={C.ink} bold>
+                {text}
+              </Text>
+            ) : (
+              <Text color={C.mute}>{text}</Text>
+            )}
+          </Text>
+        );
+      })}
     </Text>
   );
 }
 
-// ---------- key hints ----------
+// ---------- the film strip ----------
+
+/** A download shown as a strip of film: one frame per 3 columns, frames filling
+ *  in as the film arrives, sprocket holes above and below that roll while it
+ *  downloads. */
+export function FilmStrip({ percent, width, rolling }: { percent: number; width: number; rolling: boolean }) {
+  const tick = useTick(150, rolling);
+  const frames = Math.max(4, Math.floor(width / 3));
+  const filled = Math.round((Math.max(0, Math.min(100, percent)) / 100) * frames);
+  const shift = rolling ? tick % 3 : 0;
+  const holes = " ▪ ".repeat(frames + 1).slice(shift, shift + frames * 3);
+  const cells = [];
+  for (let i = 0; i < frames; i++) {
+    const color = i < filled ? mix(C.deep, C.accent, i / Math.max(1, frames - 1)) : C.rule;
+    cells.push(
+      <Text key={i} color={color}>
+        {i < filled ? "██" : "░░"}{" "}
+      </Text>,
+    );
+  }
+  return (
+    <Box flexDirection="column" flexShrink={0}>
+      <Text color={C.mute}>{holes}</Text>
+      <Text>{cells}</Text>
+      <Text color={C.mute}>{holes}</Text>
+    </Box>
+  );
+}
+
+// ---------- ticket-stub key hints ----------
 
 export type Hint = [keys: string, label: string];
 
-export function Footer({ hints, message }: { hints: Hint[]; message?: string }) {
+/** Key hints as little tickets: the key on a cyan stub, then what it does. */
+export function Tickets({ hints, message }: { hints: Hint[]; message?: string }) {
   if (message) {
     return (
       <Text color={C.accent} wrap="truncate">
@@ -178,36 +197,13 @@ export function Footer({ hints, message }: { hints: Hint[]; message?: string }) 
     <Text wrap="truncate">
       {hints.map(([keys, label], i) => (
         <Text key={keys + label}>
-          {i ? "   " : ""}
-          <Text color={C.accent}>{keys}</Text>
+          {i ? "  " : ""}
+          <Text backgroundColor={C.accent} color={C.ink} bold>
+            {` ${keys} `}
+          </Text>
           <Text color={C.mute}> {label}</Text>
         </Text>
       ))}
     </Text>
-  );
-}
-
-// ---------- the sidebar ----------
-
-export function Sidebar({ items, active, width }: { items: { label: string; count?: number }[][]; active: string; width: number }) {
-  return (
-    <Box flexDirection="column" width={width} flexShrink={0} marginTop={1}>
-      {items.map((group, g) => (
-        <Box key={g} flexDirection="column" marginTop={g ? 1 : 0}>
-          {group.map((item) => {
-            const on = item.label === active;
-            return (
-              <Text key={item.label} wrap="truncate">
-                <Text color={C.accent}>{on ? "▌ " : "  "}</Text>
-                <Text color={on ? C.accent : C.mute} bold={on}>
-                  {item.label}
-                </Text>
-                {item.count ? <Text color={C.mute}> ({item.count})</Text> : null}
-              </Text>
-            );
-          })}
-        </Box>
-      ))}
-    </Box>
   );
 }

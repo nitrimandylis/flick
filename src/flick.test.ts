@@ -7,7 +7,7 @@ import { parseYifyEnglish, srtToVtt } from "./subtitles.ts";
 import { parseDetails, parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
 import { audioLabel, browserPlayable, hashOf, matchesShow, pickBest, qualityLabel, withTrackers, type Torrent } from "./torrents.ts";
 import { clock, continueRows, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
-import { lerpHex, sheenIntensity } from "./look.tsx";
+import { bulbPath, mix } from "./look.tsx";
 import { placeholderLines } from "./poster.ts";
 import { trimCache } from "./store.ts";
 import { applySet, crossedToggle, currentTime, emptyState } from "./room.ts";
@@ -219,9 +219,13 @@ describe("tui", () => {
   test("small formatters", () => {
     expect(clock(3733)).toBe("1:02:13");
     expect(clock(725)).toBe("12:05");
-    expect(lerpHex("#000000", "#FFFFFF", 0.5)).toBe("#808080");
-    expect(sheenIntensity(0, 0)).toBeCloseTo(0.9);
-    expect(sheenIntensity(10, 0)).toBe(0);
+    expect(mix("#000000", "#FFFFFF", 0.5)).toBe("#808080");
+    // the marquee's bulbs go round the frame once, each spot visited once
+    const path = bulbPath(23);
+    expect(path.length).toBe(12 + 2 + 12 + 2);
+    expect(new Set(path.map(([r, c]) => `${r},${c}`)).size).toBe(path.length);
+    expect(path[0]).toEqual([0, 0]);
+    expect(path[path.length - 1]).toEqual([1, 0]);
     expect(uploadRate([[0, 0], [2000, 4000]])).toBe(2000);
     expect(uploadRate([[0, 0]])).toBeNull();
     expect(audioLabel("Dune.2021.2160p.REMUX.DTS-HD.MA.TrueHD.7.1.Atmos")).toBe("TrueHD DTS-HD MA 7.1 Atmos");

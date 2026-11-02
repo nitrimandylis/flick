@@ -1,14 +1,14 @@
 // The full-screen terminal UI, built with Ink (React for terminals).
-// It opens on a splash (logo, search bar). Then: browse (sidebar sections, the
-// list, a details pane) -> episodes (shows only) -> sources -> playing.
-// The look follows torlink; its pieces live in look.tsx.
+// It opens on a splash (the marquee, the search bar). Then: browse (programme
+// tabs, the list, a details pane) -> episodes (shows only) -> sources -> playing.
+// The cinema look's pieces live in look.tsx.
 
 import { Box, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { animeQueries, animeTitles, findAnime, type Anime } from "./anime.ts";
 import type { Couch } from "./couch.ts";
 import type { Engine } from "./engines.ts";
-import { C, Footer, Logo, Panel, ProgressBar, Rule, Sidebar, type Hint } from "./look.tsx";
+import { C, FilmStrip, Letterbox, Marquee, Tabs, Tickets, type Hint } from "./look.tsx";
 import type { PlayerName } from "./players.ts";
 import { loadPoster, placeholderLines, posterId, POSTER_COLS, POSTER_ROWS, POSTERS } from "./poster.ts";
 import { currentTime } from "./room.ts";
@@ -32,17 +32,15 @@ import {
 } from "./torrents.ts";
 import { watch, type Progress, type Session } from "./watch.ts";
 
-const SOURCE_COLOR: Record<string, string> = { YTS: C.good, EZTV: C.warn, TPB: "#5FD0C5", Nyaa: "#D8B4FE" };
+const SOURCE_COLOR: Record<string, string> = { YTS: C.good, EZTV: C.warn, TPB: "#6FC8FF", Nyaa: "#C9A7FF" };
 
-// Widths: below these, the sidebar and then the details pane are left out.
-const SIDEBAR_FROM = 90;
+// Below this width the details pane is left out.
 const DETAILS_FROM = 110;
-const SIDEBAR_WIDTH = 16;
 
-// The home screen's sections, switched with tab.
-const SECTIONS = ["Continue", "Films", "Shows"] as const;
+// The home screen's sections, switched with tab, like a cinema programme.
+const SECTIONS = ["Continue", "Now showing", "Shows"] as const;
 type Section = (typeof SECTIONS)[number];
-const SECTION_TITLE: Record<Section, string> = { Continue: "Continue watching", Films: "Trending films", Shows: "Trending shows" };
+const SECTION_TITLE: Record<Section, string> = { Continue: "Continue watching", "Now showing": "Trending films", Shows: "Trending shows" };
 
 // The sources list mixes headings (skipped by the arrows) with sources.
 type Heading = { heading: string };
@@ -62,7 +60,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   const [splash, setSplash] = useState(!props.initialQuery);
   const [query, setQuery] = useState(props.initialQuery);
   const [section, setSection] = useState<Section>("Continue");
-  const [home, setHome] = useState<Record<Section, TitleRow[]>>({ Continue: [], Films: [], Shows: [] });
+  const [home, setHome] = useState<Record<Section, TitleRow[]>>({ Continue: [], "Now showing": [], Shows: [] });
   const [results, setResults] = useState<TitleRow[]>([]);
   const [selected, setSelected] = useState(0);
   const [screen, setScreen] = useState<Screen>({ kind: "browse" });
@@ -96,9 +94,9 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   useEffect(() => {
     const history = continueRows(loadHistory());
     setHome((h) => ({ ...h, Continue: history }));
-    if (!history.length) setSection("Films");
+    if (!history.length) setSection("Now showing");
     Promise.all([trending("movie"), trending("tvSeries")]).then(([films, shows]) => {
-      setHome((h) => ({ ...h, Films: films.map((title) => ({ title, note: "" })), Shows: shows.map((title) => ({ title, note: "" })) }));
+      setHome((h) => ({ ...h, "Now showing": films.map((title) => ({ title, note: "" })), Shows: shows.map((title) => ({ title, note: "" })) }));
     });
   }, []);
 
@@ -352,75 +350,78 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
   if (splash && !showHelp) {
     const boxWidth = Math.min(76, width - 4);
+    const nowShowing = home["Now showing"].slice(0, 3).map((row) => row.title.name);
     return (
       <Box flexDirection="column" height={height} alignItems="center" justifyContent="center">
-        <Logo />
-        <Box marginTop={1}>
+        <Marquee chase />
+        <Box marginTop={1} flexShrink={0}>
           <Text color={C.text}>Films and shows, streamed from torrents, played right away.</Text>
         </Box>
-        <Text color={C.mute}>films · shows · anime · {couch ? <Text color={C.accent}>couch is open</Text> : "couch"}</Text>
-        <Box marginTop={1}>
-          <Panel title="Search" width={boxWidth} focused>
+        <Box flexShrink={0} height={1}>
+          <Text color={C.bulb}>{nowShowing.length ? "now showing  " : " "}</Text>
+          <Text color={C.mute}>{nowShowing.join(" · ")}</Text>
+        </Box>
+        <Box marginTop={1} flexShrink={0}>
+          <Letterbox title="Search" width={boxWidth} focused>
             <Text>
-              <Text color={C.accent}>❯ </Text>
+              <Text color={C.accent}>▸ </Text>
               {searchText}
             </Text>
-          </Panel>
+          </Letterbox>
         </Box>
         <Box marginTop={1}>
-          <Footer hints={[["⏎", "search"], ["empty ⏎", "browse"], ["^c", "quit"]]} message={couch?.link ? `couch: ${couch.link}` : undefined} />
+          <Tickets hints={[["⏎", "search"], ["empty ⏎", "browse"], ["^c", "quit"]]} message={couch?.link ? `couch: ${couch.link}` : undefined} />
         </Box>
       </Box>
     );
   }
 
   const inner = width - 2;
-  const sidebarWidth = width >= SIDEBAR_FROM ? SIDEBAR_WIDTH : 0;
-  const rightWidth = inner - sidebarWidth;
-  const detailsWidth = width >= DETAILS_FROM ? Math.floor(rightWidth * 0.5) : 0;
-  const listWidth = rightWidth - detailsWidth - (detailsWidth ? 1 : 0);
-  // logo 3 + rule 1 + gap 1 + search 3 + gap 1 + footer 1
-  const panelHeight = Math.max(8, height - 10);
+  const rightWidth = inner;
+  const detailsWidth = width >= DETAILS_FROM ? Math.floor(inner * 0.5) : 0;
+  const listWidth = inner - detailsWidth - (detailsWidth ? 2 : 0);
+  // marquee 4 + tabs 1 + gap 1 + search 3 + gap 1 + footer 1
+  const panelHeight = Math.max(8, height - 11);
   const listHeight = panelHeight - 3; // borders and the column header
 
   let listPanel = null;
   let pane = null;
   if (showHelp) {
     listPanel = (
-      <Panel title="Keys" width={rightWidth} height={panelHeight} focused>
+      <Letterbox title="Keys" width={rightWidth} height={panelHeight} focused>
         <Help />
-      </Panel>
+      </Letterbox>
     );
   } else if (screen.kind === "browse") {
     const title = query.trim() ? "Search results" : SECTION_TITLE[section];
     listPanel = (
-      <Panel title={title} count={rows.length} width={listWidth} height={panelHeight} focused>
+      <Letterbox title={title} count={rows.length} width={listWidth} height={panelHeight} focused>
         <TitleList rows={rows} selected={selected} height={listHeight} empty={query.trim() ? "Nothing found." : "Loading…"} />
-      </Panel>
+      </Letterbox>
     );
     const row = rows[selected];
     pane = row ? <TitlePane title={row.title} /> : null;
   } else if (screen.kind === "episodes") {
     listPanel = (
-      <Panel title={screen.anime ? "Episodes" : `Season ${screen.season}`} count={screen.list.length} width={listWidth} height={panelHeight} focused>
+      <Letterbox title={screen.anime ? "Episodes" : `Season ${screen.season}`} count={screen.list.length} width={listWidth} height={panelHeight} focused>
         <EpisodeList screen={screen} selected={selected} height={listHeight} />
-      </Panel>
+      </Letterbox>
     );
     const ep = screen.list[selected];
     pane = ep ? <EpisodePane show={screen.title} episode={ep} anime={Boolean(screen.anime)} /> : null;
   } else if (screen.kind === "sources") {
     const count = screen.report ? screen.report.torrents.length : undefined;
     listPanel = (
-      <Panel title="Sources" count={count} width={listWidth} height={panelHeight} focused>
+      <Letterbox title="Sources" count={count} width={listWidth} height={panelHeight} focused>
         <SourceList screen={screen} entries={sourceList} selected={selected} height={listHeight} couch={Boolean(couch)} />
-      </Panel>
+      </Letterbox>
     );
     pane = picked && "torrent" in picked ? <SourcePane torrent={picked.torrent} pick={picked.pick} poster={screen.wanted.title.poster} couch={Boolean(couch)} /> : null;
   } else {
     listPanel = (
-      <Panel title={couch ? "On in the room" : "Now playing"} width={rightWidth} height={panelHeight} focused>
-        <Playing screen={screen} couch={couch} upload={uploadRate(uploads.current)} barWidth={Math.min(40, rightWidth - 30)} />
-      </Panel>
+      <Letterbox title={couch ? "On in the room" : "Now playing"} width={rightWidth} height={panelHeight} focused>
+        <Playing screen={screen} couch={couch} upload={uploadRate(uploads.current)} barWidth={Math.min(48, rightWidth - 30)} />
+      </Letterbox>
     );
   }
 
@@ -435,43 +436,42 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
             ? [["c", "copy the room link"], ["esc", "take the film off"]]
             : [["esc", "stop"]];
 
-  const sidebar = [
-    SECTIONS.map((s) => ({ label: s, count: s === "Continue" ? home.Continue.length : undefined })),
-    [{ label: "Search", count: query.trim() ? results.length : undefined }],
+  const tabs = [
+    ...SECTIONS.map((s) => ({ label: s, count: s === "Continue" ? home.Continue.length : undefined })),
+    { label: "Search", count: query.trim() ? results.length : undefined },
   ];
   const active = screen.kind === "browse" ? (query.trim() ? "Search" : section) : "";
 
   return (
     <Box flexDirection="column" paddingX={1} height={height}>
       <Box justifyContent="space-between">
-        <Logo />
+        <Marquee />
         <Status couch={couch} engine={props.engine.name} player={props.player} />
       </Box>
-      <Rule width={inner} />
+      <Tabs tabs={tabs} active={active} />
 
       <Box marginTop={1} flexGrow={1}>
-        {sidebarWidth ? <Sidebar items={sidebar} active={active} width={sidebarWidth} /> : null}
         <Box flexDirection="column" width={rightWidth}>
-          <Panel title="Search" width={rightWidth} focused={screen.kind === "browse"}>
+          <Letterbox title="Search" width={rightWidth} focused={screen.kind === "browse"}>
             <Text wrap="truncate">
-              <Text color={C.accent}>❯ </Text>
+              <Text color={C.accent}>▸ </Text>
               {screen.kind === "browse" ? searchText : <Text color={C.text}>{screen.kind === "episodes" ? screen.title.name : screen.label}</Text>}
             </Text>
-          </Panel>
+          </Letterbox>
           <Box marginTop={1}>
             {listPanel}
             {detailsWidth && pane && !showHelp && screen.kind !== "playing" ? (
-              <Box marginLeft={1}>
-                <Panel title="Details" width={detailsWidth} height={panelHeight}>
+              <Box marginLeft={2}>
+                <Letterbox title="Details" width={detailsWidth} height={panelHeight}>
                   {pane}
-                </Panel>
+                </Letterbox>
               </Box>
             ) : null}
           </Box>
         </Box>
       </Box>
 
-      <Footer hints={hints} message={busy} />
+      <Tickets hints={hints} message={busy} />
     </Box>
   );
 }
@@ -596,7 +596,7 @@ function Status({ couch, engine, player }: { couch?: Couch; engine: string; play
 }
 
 function Pointer({ on }: { on: boolean }) {
-  return <Text color={C.accent}>{on ? "❯ " : "  "}</Text>;
+  return <Text color={C.accent}>{on ? "▸ " : "  "}</Text>;
 }
 
 /** A column header row, dim, lined up with the rows below it. */
@@ -875,13 +875,10 @@ function Playing({ screen, couch, upload, barWidth }: { screen: Extract<Screen, 
         {screen.error ? <Text color={C.bad}>✗ {screen.error}</Text> : <Text color={C.text}>● {screen.status}</Text>}
         {p ? (
           <Box flexDirection="column" marginTop={1}>
-            <Text>
-              <Text color={C.mute}>↓ </Text>
-              <ProgressBar percent={p.percent} width={Math.max(10, barWidth)} animate={p.percent < 100} />
-              <Text color={C.text}> {p.percent >= 100 ? "on disk" : `${p.percent}%`}</Text>
-            </Text>
+            <FilmStrip percent={p.percent} width={Math.max(12, barWidth)} rolling={p.percent < 100} />
             <Text color={C.mute}>
-              {"  "}
+              <Text color={C.text}>{p.percent >= 100 ? "on disk" : `${p.percent}%`}</Text>
+              {" · "}
               {p.percent < 100 ? `${humanSize(p.downBytesPerSec)}/s · ` : ""}
               {p.peers} {p.peers === 1 ? "peer" : "peers"}
             </Text>
@@ -939,7 +936,7 @@ function Help() {
     ["type", "search films and shows (IMDb)"],
     ["⏎", "open a title, an episode, or play a source"],
     ["↑ ↓", "move"],
-    ["tab", "home sections: continue, films, shows"],
+    ["tab", "the programme: continue, now showing, shows"],
     ["← →", "change season"],
     ["c", "couch: copy the room link while a film is on"],
     ["esc", "back, clear the search, or home"],

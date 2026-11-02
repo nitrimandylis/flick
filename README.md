@@ -94,4 +94,4 @@ MIT licensed.
 
 ## 🙏 Credits
 
-flick's look and its list of torrent sources come from [torlink](https://github.com/baairon/torlink) by bairon.dev (MIT). `src/look.tsx` adapts its gradient logo, titled panels, progress-bar sheen, key hints and sidebar; `src/torrents.ts` follows its curated source list. torlink's licence notice is included in [LICENSE](LICENSE).
+flick's list of torrent sources follows the one curated by [torlink](https://github.com/baairon/torlink) (bairon.dev, MIT), and its search-first terminal UI took inspiration from torlink's.
