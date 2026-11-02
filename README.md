@@ -91,3 +91,7 @@ Film details come from Wikidata and Wikipedia by IMDb id, plus IMDb itself when 
 MIT licensed.
 
 </div>
+
+## 🙏 Credits
+
+flick's look and its list of torrent sources come from [torlink](https://github.com/baairon/torlink) by bairon.dev (MIT). `src/look.tsx` adapts its gradient logo, titled panels, progress-bar sheen, key hints and sidebar; `src/torrents.ts` follows its curated source list. torlink's licence notice is included in [LICENSE](LICENSE).
