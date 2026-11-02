@@ -78,12 +78,13 @@ export async function loadPoster(url: string, cols: number, rows: number): Promi
 /** The poster as PNG, from the cache folder or downloaded and converted once. */
 async function posterPng(url: string): Promise<Buffer> {
   mkdirSync(POSTER_DIR, { recursive: true });
-  const name = createHash("sha1").update(url).digest("hex");
+  // IMDb's image server resizes on request: 600 px wide stays sharp on a
+  // Retina screen even for the big poster.
+  const sized = url.replace(/\._V1_.*\.jpg$/, "._V1_SX600.jpg");
+  const name = createHash("sha1").update(sized).digest("hex");
   const png = join(POSTER_DIR, `${name}.png`);
   if (!existsSync(png)) {
-    // IMDb's image server resizes on request: 300 px wide is plenty for 18 cells.
-    const small = url.replace(/\._V1_.*\.jpg$/, "._V1_SX300.jpg");
-    const res = await fetch(small);
+    const res = await fetch(sized);
     if (!res.ok) throw new Error(`poster ${res.status}`);
     const jpg = join(POSTER_DIR, `${name}.jpg`);
     writeFileSync(jpg, Buffer.from(await res.arrayBuffer()));
@@ -100,9 +101,12 @@ function sendPicture(id: number, png: Buffer, cols: number, rows: number) {
   let out = "";
   for (let i = 0; i < data.length; i += 4096) {
     const more = i + 4096 < data.length ? 1 : 0;
-    const head = i === 0 ? `a=T,U=1,f=100,i=${id},c=${cols},r=${rows},q=2,m=${more}` : `m=${more}`;
+    const head = i === 0 ? `a=t,f=100,i=${id},q=2,m=${more}` : `m=${more}`;
     out += `\x1b_G${head};${data.slice(i, i + 4096)}\x1b\\`;
   }
+  // The placement is its own command: Ghostty only takes the size (c, r) from
+  // a placement command, and otherwise draws the picture at its pixel size.
+  out += `\x1b_Ga=p,U=1,i=${id},c=${cols},r=${rows},q=2\x1b\\`;
   process.stdout.write(out);
 }
 
