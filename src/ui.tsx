@@ -8,7 +8,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { animeQueries, animeTitles, findAnime, type Anime } from "./anime.ts";
 import type { Couch } from "./couch.ts";
 import type { Engine } from "./engines.ts";
-import { C, FilmStrip, Letterbox, Marquee, Tabs, Tickets, type Hint } from "./look.tsx";
+import { C, FilmStrip, Viewfinder, Marquee, Tabs, Tickets, type Hint } from "./look.tsx";
 import type { PlayerName } from "./players.ts";
 import { loadPoster, placeholderLines, posterId, POSTER_COLS, POSTER_ROWS, POSTERS } from "./poster.ts";
 import { currentTime } from "./room.ts";
@@ -362,12 +362,12 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
           <Text color={C.mute}>{nowShowing.join(" · ")}</Text>
         </Box>
         <Box marginTop={1} flexShrink={0}>
-          <Letterbox title="Search" width={boxWidth} focused>
+          <Viewfinder title="Search" width={boxWidth} focused>
             <Text>
               <Text color={C.accent}>▸ </Text>
               {searchText}
             </Text>
-          </Letterbox>
+          </Viewfinder>
         </Box>
         <Box marginTop={1}>
           <Tickets hints={[["⏎", "search"], ["empty ⏎", "browse"], ["^c", "quit"]]} message={couch?.link ? `couch: ${couch.link}` : undefined} />
@@ -388,40 +388,40 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   let pane = null;
   if (showHelp) {
     listPanel = (
-      <Letterbox title="Keys" width={rightWidth} height={panelHeight} focused>
+      <Viewfinder title="Keys" width={rightWidth} height={panelHeight} focused>
         <Help />
-      </Letterbox>
+      </Viewfinder>
     );
   } else if (screen.kind === "browse") {
     const title = query.trim() ? "Search results" : SECTION_TITLE[section];
     listPanel = (
-      <Letterbox title={title} count={rows.length} width={listWidth} height={panelHeight} focused>
+      <Viewfinder title={title} count={rows.length} width={listWidth} height={panelHeight} focused>
         <TitleList rows={rows} selected={selected} height={listHeight} empty={query.trim() ? "Nothing found." : "Loading…"} />
-      </Letterbox>
+      </Viewfinder>
     );
     const row = rows[selected];
     pane = row ? <TitlePane title={row.title} /> : null;
   } else if (screen.kind === "episodes") {
     listPanel = (
-      <Letterbox title={screen.anime ? "Episodes" : `Season ${screen.season}`} count={screen.list.length} width={listWidth} height={panelHeight} focused>
+      <Viewfinder title={screen.anime ? "Episodes" : `Season ${screen.season}`} count={screen.list.length} width={listWidth} height={panelHeight} focused>
         <EpisodeList screen={screen} selected={selected} height={listHeight} />
-      </Letterbox>
+      </Viewfinder>
     );
     const ep = screen.list[selected];
     pane = ep ? <EpisodePane show={screen.title} episode={ep} anime={Boolean(screen.anime)} /> : null;
   } else if (screen.kind === "sources") {
     const count = screen.report ? screen.report.torrents.length : undefined;
     listPanel = (
-      <Letterbox title="Sources" count={count} width={listWidth} height={panelHeight} focused>
+      <Viewfinder title="Sources" count={count} width={listWidth} height={panelHeight} focused>
         <SourceList screen={screen} entries={sourceList} selected={selected} height={listHeight} couch={Boolean(couch)} />
-      </Letterbox>
+      </Viewfinder>
     );
     pane = picked && "torrent" in picked ? <SourcePane torrent={picked.torrent} pick={picked.pick} poster={screen.wanted.title.poster} couch={Boolean(couch)} /> : null;
   } else {
     listPanel = (
-      <Letterbox title={couch ? "On in the room" : "Now playing"} width={rightWidth} height={panelHeight} focused>
+      <Viewfinder title={couch ? "On in the room" : "Now playing"} width={rightWidth} height={panelHeight} focused>
         <Playing screen={screen} couch={couch} upload={uploadRate(uploads.current)} barWidth={Math.min(48, rightWidth - 30)} />
-      </Letterbox>
+      </Viewfinder>
     );
   }
 
@@ -452,19 +452,19 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
       <Box marginTop={1} flexGrow={1}>
         <Box flexDirection="column" width={rightWidth}>
-          <Letterbox title="Search" width={rightWidth} focused={screen.kind === "browse"}>
+          <Viewfinder title="Search" width={rightWidth} focused={screen.kind === "browse"}>
             <Text wrap="truncate">
               <Text color={C.accent}>▸ </Text>
               {screen.kind === "browse" ? searchText : <Text color={C.text}>{screen.kind === "episodes" ? screen.title.name : screen.label}</Text>}
             </Text>
-          </Letterbox>
+          </Viewfinder>
           <Box marginTop={1}>
             {listPanel}
             {detailsWidth && pane && !showHelp && screen.kind !== "playing" ? (
               <Box marginLeft={2}>
-                <Letterbox title="Details" width={detailsWidth} height={panelHeight}>
+                <Viewfinder title="Details" width={detailsWidth} height={panelHeight}>
                   {pane}
-                </Letterbox>
+                </Viewfinder>
               </Box>
             ) : null}
           </Box>

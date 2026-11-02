@@ -1,5 +1,5 @@
 // flick's visual pieces, themed as a cinema: a marquee sign with chasing
-// bulbs, letterbox panels, programme tabs, a film-strip progress bar and
+// bulbs, viewfinder panels, programme tabs, a film-strip progress bar and
 // ticket-stub key hints. Colours are flick's neon cyan (the couch room page's)
 // with warm marquee bulbs.
 
@@ -100,27 +100,32 @@ export function Marquee({ chase = false }: { chase?: boolean }) {
   );
 }
 
-// ---------- letterbox panels ----------
+// ---------- viewfinder panels ----------
 
-/** A panel framed like a widescreen film: a heavy bar above with the title on
- *  a chip, a heavy bar below, no sides. */
-export function Letterbox(props: { title: string; count?: number; width: number; height?: number; focused?: boolean; children: ReactNode }) {
-  const bar = props.focused ? C.accent : C.rule;
-  const label = ` ${props.title}${props.count === undefined ? "" : `  ${props.count}`} `;
-  const rest = Math.max(0, props.width - 2 - label.length);
+/** A panel framed like a camera viewfinder: only its four corners are marked,
+ *  and the title sits in the top left corner. */
+export function Viewfinder(props: { title: string; count?: number; width: number; height?: number; focused?: boolean; children: ReactNode }) {
+  const corner = props.focused ? C.accent : C.rule;
+  const label = props.count === undefined ? props.title : `${props.title} · ${props.count}`;
+  const gap = Math.max(0, props.width - 3 - label.length - 2);
   return (
     <Box flexDirection="column" width={props.width} flexShrink={0}>
       <Text wrap="truncate">
-        <Text color={bar}>{"▄▄"}</Text>
-        <Text backgroundColor={bar} color={C.ink} bold>
+        <Text color={corner}>{"┌─ "}</Text>
+        <Text color={props.focused ? C.accent : C.text} bold>
           {label}
         </Text>
-        <Text color={bar}>{"▄".repeat(rest)}</Text>
+        {" ".repeat(gap)}
+        <Text color={corner}>{"─┐"}</Text>
       </Text>
       <Box flexDirection="column" paddingX={1} height={props.height === undefined ? undefined : Math.max(1, props.height - 2)} overflow="hidden">
         {props.children}
       </Box>
-      <Text color={bar}>{"▀".repeat(props.width)}</Text>
+      <Text>
+        <Text color={corner}>{"└─"}</Text>
+        {" ".repeat(Math.max(0, props.width - 4))}
+        <Text color={corner}>{"─┘"}</Text>
+      </Text>
     </Box>
   );
 }
