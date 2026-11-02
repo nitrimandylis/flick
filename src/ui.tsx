@@ -1,13 +1,14 @@
 // The full-screen terminal UI, built with Ink (React for terminals).
-// Screens: browse (search bar + list) -> episodes (shows only) -> sources -> playing.
-// On a wide terminal the list sits on the left and a details pane on the right
-// shows whatever is highlighted: the title, the episode, or the source.
+// It opens on a splash (logo, search bar). Then: browse (sidebar sections, the
+// list, a details pane) -> episodes (shows only) -> sources -> playing.
+// The look follows torlink; its pieces live in look.tsx.
 
 import { Box, Text, useApp, useInput, usePaste, useWindowSize } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { animeQueries, animeTitles, findAnime, type Anime } from "./anime.ts";
 import type { Couch } from "./couch.ts";
 import type { Engine } from "./engines.ts";
+import { C, Footer, Logo, Panel, ProgressBar, Rule, Sidebar, type Hint } from "./look.tsx";
 import type { PlayerName } from "./players.ts";
 import { loadPoster, placeholderLines, posterId, POSTER_COLS, POSTER_ROWS, POSTERS } from "./poster.ts";
 import { currentTime } from "./room.ts";
@@ -31,27 +32,22 @@ import {
 } from "./torrents.ts";
 import { watch, type Progress, type Session } from "./watch.ts";
 
-const C = {
-  accent: "#3DF5FF", // couch's cyan, the same as the room page
-  text: "#E8F1F5",
-  mute: "#7D8A9A",
-  good: "#86D6A2",
-  warn: "#F0C560",
-  bad: "#FF3DCB",
-};
-
-const LOGO = [" █▀▀ █   █ █▀▀ █▄▀", " █▀  █▄▄ █ █▄▄ █ █"];
-
 const SOURCE_COLOR: Record<string, string> = { YTS: C.good, EZTV: C.warn, TPB: "#5FD0C5", Nyaa: "#D8B4FE" };
 
-// Below this many columns there is no room for the details pane.
-const WIDE = 100;
+// Widths: below these, the sidebar and then the details pane are left out.
+const SIDEBAR_FROM = 90;
+const DETAILS_FROM = 110;
+const SIDEBAR_WIDTH = 16;
 
-// Lists mix headings (skipped by the arrows) with rows.
+// The home screen's sections, switched with tab.
+const SECTIONS = ["Continue", "Films", "Shows"] as const;
+type Section = (typeof SECTIONS)[number];
+const SECTION_TITLE: Record<Section, string> = { Continue: "Continue watching", Films: "Trending films", Shows: "Trending shows" };
+
+// The sources list mixes headings (skipped by the arrows) with sources.
 type Heading = { heading: string };
 type TitleRow = { title: Title; note: string };
 type SourceRow = { torrent: Torrent; pick: boolean };
-type BrowseEntry = Heading | TitleRow;
 type SourceEntry = Heading | SourceRow;
 
 type Screen =
@@ -63,8 +59,11 @@ type Screen =
 export function App(props: { engine: Engine; player: PlayerName; cacheGB: number; dub: boolean; initialQuery: string; couch?: Couch }) {
   const { exit } = useApp();
   const { rows: height, columns: width } = useWindowSize();
+  const [splash, setSplash] = useState(!props.initialQuery);
   const [query, setQuery] = useState(props.initialQuery);
-  const [entries, setEntries] = useState<BrowseEntry[]>([]);
+  const [section, setSection] = useState<Section>("Continue");
+  const [home, setHome] = useState<Record<Section, TitleRow[]>>({ Continue: [], Films: [], Shows: [] });
+  const [results, setResults] = useState<TitleRow[]>([]);
   const [selected, setSelected] = useState(0);
   const [screen, setScreen] = useState<Screen>({ kind: "browse" });
   const [busy, setBusy] = useState("");
@@ -93,35 +92,32 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
   // ---------- loading lists ----------
 
-  // Empty search: continue watching, then what's trending. Otherwise: search IMDb.
+  // Home: what you were watching, and what's trending, loaded once.
+  useEffect(() => {
+    const history = continueRows(loadHistory());
+    setHome((h) => ({ ...h, Continue: history }));
+    if (!history.length) setSection("Films");
+    Promise.all([trending("movie"), trending("tvSeries")]).then(([films, shows]) => {
+      setHome((h) => ({ ...h, Films: films.map((title) => ({ title, note: "" })), Shows: shows.map((title) => ({ title, note: "" })) }));
+    });
+  }, []);
+
+  // Typing searches IMDb, once the typing pauses.
   useEffect(() => {
     const id = ++searchId.current;
+    if (!query.trim()) return;
     const timer = setTimeout(async () => {
-      if (!query.trim()) {
-        const history = loadHistory();
-        showEntries(homeEntries(history, [], []));
-        setBusy("loading what's trending…");
-        const [films, shows] = await Promise.all([trending("movie"), trending("tvSeries")]);
-        if (id !== searchId.current) return;
-        showEntries(homeEntries(history, films, shows));
-        setBusy("");
-        return;
-      }
       setBusy("searching…");
       const found = await searchTitles(query);
       if (id !== searchId.current) return;
-      setEntries(found.map((title) => ({ title, note: "" })));
+      setResults(found.map((title) => ({ title, note: "" })));
       setSelected(0);
       setBusy("");
-    }, 250); // wait for typing to pause
+    }, 250);
     return () => clearTimeout(timer);
   }, [query]);
 
-  // Swap the list in, moving the cursor off a heading if it landed on one.
-  function showEntries(next: BrowseEntry[]) {
-    setEntries(next);
-    setSelected((i) => (next[i] && !("heading" in next[i]) ? i : firstRow(next)));
-  }
+  const rows = query.trim() ? results : home[section];
 
   async function openTitle(title: Title) {
     if (couch && isSeries(title)) {
@@ -171,6 +167,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   }
 
   async function startWatching(torrent: Torrent, title: Title | null, label: string, episode?: { season: number; number: number; tag: string }) {
+    setSplash(false);
     setScreen({ kind: "playing", label, title, torrent, status: "starting…", progress: null, error: null });
     const update = (change: Partial<Extract<Screen, { kind: "playing" }>>) =>
       setScreen((s) => (s.kind === "playing" ? { ...s, ...change } : s));
@@ -214,7 +211,10 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   usePaste((text) => {
     const hash = hashOf(text.trim());
     if (!hash || screen.kind === "playing") {
-      if (screen.kind === "browse") setQuery((q) => q + text.replace(/\s+/g, " "));
+      if (screen.kind === "browse") {
+        setSplash(false);
+        setQuery((q) => q + text.replace(/\s+/g, " "));
+      }
       return;
     }
     const name = decodeURIComponent(text.match(/[?&]dn=([^&]+)/)?.[1] ?? "pasted magnet").replace(/\+/g, " ");
@@ -231,6 +231,20 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   useInput((input, key) => {
     if (key.ctrl && input === "c") return quit();
     if (showHelp) return setShowHelp(false);
+
+    if (splash) {
+      if (key.return) {
+        setSplash(false); // an empty search browses; a typed one shows its results
+        return setSelected(0);
+      }
+      if (key.escape) return query ? setQuery("") : quit();
+      if (key.backspace || key.delete) return setQuery((q) => q.slice(0, -1));
+      if (input && !key.ctrl && !key.meta) {
+        setSplash(false);
+        return setQuery((q) => q + input);
+      }
+      return;
+    }
 
     if (screen.kind === "playing") {
       if (input === "c" && couch?.link) {
@@ -251,7 +265,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
     if (key.upArrow || key.downArrow) {
       const step = key.upArrow ? -1 : 1;
-      if (screen.kind === "browse") return setSelected((i) => nextRow(entries, i, step));
+      if (screen.kind === "browse") return setSelected((i) => Math.max(0, Math.min(rows.length - 1, i + step)));
       if (screen.kind === "sources") {
         moved.current = true;
         return setSelected((i) => nextRow(sourceList, i, step));
@@ -260,9 +274,19 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
     }
 
     if (screen.kind === "browse") {
-      const entry = entries[selected];
-      if (key.return && entry && "title" in entry) return void openTitle(entry.title);
-      if (key.escape) return query ? setQuery("") : quit();
+      const row = rows[selected];
+      if (key.tab) {
+        // tab leaves a search and steps through the home sections
+        const next = query ? section : SECTIONS[(SECTIONS.indexOf(section) + (key.shift ? SECTIONS.length - 1 : 1)) % SECTIONS.length];
+        setQuery("");
+        setSection(next);
+        return setSelected(0);
+      }
+      if (key.return && row) return void openTitle(row.title);
+      if (key.escape) {
+        if (query) return setQuery("");
+        return setSplash(true);
+      }
       if (key.backspace || key.delete) return setQuery((q) => q.slice(0, -1));
       if (input === "?" && !query) return setShowHelp(true);
       if (input && !key.ctrl && !key.meta) return setQuery((q) => q + input);
@@ -317,75 +341,137 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
   // ---------- drawing ----------
 
-  const home = screen.kind === "browse";
-  const wide = width >= WIDE;
-  const listWidth = Math.floor((width - 2) * 0.45);
-  const listHeight = Math.max(5, height - (home ? 10 : 8));
-  const footer =
-    screen.kind === "browse"
-      ? "type to search · ↑↓ move · ⏎ open · paste a magnet to play it · esc clear/quit · ? help"
-      : screen.kind === "episodes"
-        ? "←→ season · ↑↓ episode · ⏎ sources · esc back"
-        : screen.kind === "sources"
-          ? couch
-            ? "↑↓ move · ⏎ put it on in the room · esc back"
-            : "↑↓ move · ⏎ play · esc back"
-          : couch
-            ? "c copies the room link · esc takes the film off (the room keeps its place)"
-            : "⏎ or esc stops the film";
+  const searchText = query ? (
+    <Text color={C.text}>
+      {query}
+      <Text color={C.accent}>▌</Text>
+    </Text>
+  ) : (
+    <Text color={C.mute}>Search films and shows, or paste a magnet link…</Text>
+  );
 
-  let list = null;
+  if (splash && !showHelp) {
+    const boxWidth = Math.min(76, width - 4);
+    return (
+      <Box flexDirection="column" height={height} alignItems="center" justifyContent="center">
+        <Logo />
+        <Box marginTop={1}>
+          <Text color={C.text}>Films and shows, streamed from torrents, played right away.</Text>
+        </Box>
+        <Text color={C.mute}>films · shows · anime · {couch ? <Text color={C.accent}>couch is open</Text> : "couch"}</Text>
+        <Box marginTop={1}>
+          <Panel title="Search" width={boxWidth} focused>
+            <Text>
+              <Text color={C.accent}>❯ </Text>
+              {searchText}
+            </Text>
+          </Panel>
+        </Box>
+        <Box marginTop={1}>
+          <Footer hints={[["⏎", "search"], ["empty ⏎", "browse"], ["^c", "quit"]]} message={couch?.link ? `couch: ${couch.link}` : undefined} />
+        </Box>
+      </Box>
+    );
+  }
+
+  const inner = width - 2;
+  const sidebarWidth = width >= SIDEBAR_FROM ? SIDEBAR_WIDTH : 0;
+  const rightWidth = inner - sidebarWidth;
+  const detailsWidth = width >= DETAILS_FROM ? Math.floor(rightWidth * 0.5) : 0;
+  const listWidth = rightWidth - detailsWidth - (detailsWidth ? 1 : 0);
+  // logo 3 + rule 1 + gap 1 + search 3 + gap 1 + footer 1
+  const panelHeight = Math.max(8, height - 10);
+  const listHeight = panelHeight - 3; // borders and the column header
+
+  let listPanel = null;
   let pane = null;
-  if (screen.kind === "browse") {
-    list = <TitleList entries={entries} selected={selected} height={listHeight} />;
-    const entry = entries[selected];
-    pane = entry && "title" in entry ? <TitlePane title={entry.title} /> : null;
+  if (showHelp) {
+    listPanel = (
+      <Panel title="Keys" width={rightWidth} height={panelHeight} focused>
+        <Help />
+      </Panel>
+    );
+  } else if (screen.kind === "browse") {
+    const title = query.trim() ? "Search results" : SECTION_TITLE[section];
+    listPanel = (
+      <Panel title={title} count={rows.length} width={listWidth} height={panelHeight} focused>
+        <TitleList rows={rows} selected={selected} height={listHeight} empty={query.trim() ? "Nothing found." : "Loading…"} />
+      </Panel>
+    );
+    const row = rows[selected];
+    pane = row ? <TitlePane title={row.title} /> : null;
   } else if (screen.kind === "episodes") {
-    list = <EpisodeList screen={screen} selected={selected} height={listHeight} />;
+    listPanel = (
+      <Panel title={screen.anime ? "Episodes" : `Season ${screen.season}`} count={screen.list.length} width={listWidth} height={panelHeight} focused>
+        <EpisodeList screen={screen} selected={selected} height={listHeight} />
+      </Panel>
+    );
     const ep = screen.list[selected];
     pane = ep ? <EpisodePane show={screen.title} episode={ep} anime={Boolean(screen.anime)} /> : null;
   } else if (screen.kind === "sources") {
-    list = <SourceList screen={screen} entries={sourceList} selected={selected} height={listHeight} couch={Boolean(couch)} />;
+    const count = screen.report ? screen.report.torrents.length : undefined;
+    listPanel = (
+      <Panel title="Sources" count={count} width={listWidth} height={panelHeight} focused>
+        <SourceList screen={screen} entries={sourceList} selected={selected} height={listHeight} couch={Boolean(couch)} />
+      </Panel>
+    );
     pane = picked && "torrent" in picked ? <SourcePane torrent={picked.torrent} pick={picked.pick} poster={screen.wanted.title.poster} couch={Boolean(couch)} /> : null;
+  } else {
+    listPanel = (
+      <Panel title={couch ? "On in the room" : "Now playing"} width={rightWidth} height={panelHeight} focused>
+        <Playing screen={screen} couch={couch} upload={uploadRate(uploads.current)} barWidth={Math.min(40, rightWidth - 30)} />
+      </Panel>
+    );
   }
+
+  const hints: Hint[] =
+    screen.kind === "browse"
+      ? [["type", "search"], ["↑↓", "move"], ["tab", "section"], ["⏎", "open"], ["esc", query ? "clear" : "home"], ["?", "keys"]]
+      : screen.kind === "episodes"
+        ? [["←→", "season"], ["↑↓", "episode"], ["⏎", "sources"], ["esc", "back"]]
+        : screen.kind === "sources"
+          ? [["↑↓", "move"], ["⏎", couch ? "put it on in the room" : "play"], ["esc", "back"]]
+          : couch
+            ? [["c", "copy the room link"], ["esc", "take the film off"]]
+            : [["esc", "stop"]];
+
+  const sidebar = [
+    SECTIONS.map((s) => ({ label: s, count: s === "Continue" ? home.Continue.length : undefined })),
+    [{ label: "Search", count: query.trim() ? results.length : undefined }],
+  ];
+  const active = screen.kind === "browse" ? (query.trim() ? "Search" : section) : "";
 
   return (
     <Box flexDirection="column" paddingX={1} height={height}>
-      <Header home={home} couch={couch} engine={props.engine.name} player={props.player} />
-
-      <Box marginTop={1} borderStyle="round" borderColor={home ? C.accent : C.mute} paddingX={1}>
-        <Text color={C.accent}>⌕ </Text>
-        {home ? (
-          query ? <Text color={C.text}>{query}<Text color={C.accent}>▌</Text></Text> : <Text color={C.mute}>search films and shows, or paste a magnet</Text>
-        ) : (
-          <Text color={C.text}>{screen.kind === "episodes" ? screen.title.name : screen.label}</Text>
-        )}
+      <Box justifyContent="space-between">
+        <Logo />
+        <Status couch={couch} engine={props.engine.name} player={props.player} />
       </Box>
+      <Rule width={inner} />
 
       <Box marginTop={1} flexGrow={1}>
-        {showHelp ? (
-          <Help />
-        ) : screen.kind === "playing" ? (
-          <Playing screen={screen} couch={couch} upload={uploadRate(uploads.current)} />
-        ) : (
-          <>
-            <Box flexDirection="column" width={wide ? listWidth : undefined} flexGrow={wide ? 0 : 1} flexShrink={0} height={listHeight} overflow="hidden">
-              {list}
-            </Box>
-            {wide ? (
-              <Box flexDirection="column" flexGrow={1} marginLeft={3} height={listHeight} overflow="hidden">
-                {pane}
+        {sidebarWidth ? <Sidebar items={sidebar} active={active} width={sidebarWidth} /> : null}
+        <Box flexDirection="column" width={rightWidth}>
+          <Panel title="Search" width={rightWidth} focused={screen.kind === "browse"}>
+            <Text wrap="truncate">
+              <Text color={C.accent}>❯ </Text>
+              {screen.kind === "browse" ? searchText : <Text color={C.text}>{screen.kind === "episodes" ? screen.title.name : screen.label}</Text>}
+            </Text>
+          </Panel>
+          <Box marginTop={1}>
+            {listPanel}
+            {detailsWidth && pane && !showHelp && screen.kind !== "playing" ? (
+              <Box marginLeft={1}>
+                <Panel title="Details" width={detailsWidth} height={panelHeight}>
+                  {pane}
+                </Panel>
               </Box>
             ) : null}
-          </>
-        )}
+          </Box>
+        </Box>
       </Box>
 
-      <Box>
-        <Text color={busy ? C.accent : C.mute} wrap="truncate">
-          {busy || footer}
-        </Text>
-      </Box>
+      <Footer hints={hints} message={busy} />
     </Box>
   );
 }
@@ -411,19 +497,12 @@ export function firstRow(entries: object[]): number {
   return Math.max(0, entries.findIndex((e) => !("heading" in e)));
 }
 
-/** Home: what you were watching, then what's trending. Pure. */
-export function homeEntries(history: Watched[], films: Title[], shows: Title[]): BrowseEntry[] {
-  const entries: BrowseEntry[] = [];
-  if (history.length) entries.push({ heading: "Continue watching" });
-  for (const w of history) {
-    const title: Title = { id: w.id, name: w.name, year: w.year, kind: w.kind, poster: w.poster, cast: "" };
-    entries.push({ title, note: w.episode ? `${sxxeyy(w.season ?? 1, w.episode + 1)} next` : "watched" });
-  }
-  if (films.length) entries.push({ heading: "Trending films" });
-  for (const title of films) entries.push({ title, note: "" });
-  if (shows.length) entries.push({ heading: "Trending shows" });
-  for (const title of shows) entries.push({ title, note: "" });
-  return entries;
+/** "Continue watching": films you watched, shows with the next episode. Pure. */
+export function continueRows(history: Watched[]): TitleRow[] {
+  return history.map((w) => ({
+    title: { id: w.id, name: w.name, year: w.year, kind: w.kind, poster: w.poster, cast: "" },
+    note: w.episode ? `${sxxeyy(w.season ?? 1, w.episode + 1)} next` : "watched",
+  }));
 }
 
 /** Sources as the list shows them: flick's pick on top, then the rest grouped
@@ -455,12 +534,6 @@ export function clock(seconds: number): string {
   const mm = String(Math.floor((s % 3600) / 60)).padStart(h ? 2 : 1, "0");
   const ss = String(s % 60).padStart(2, "0");
   return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
-}
-
-/** A progress bar `width` characters wide. Pure. */
-export function bar(fraction: number, width: number): string {
-  const full = Math.round(Math.max(0, Math.min(1, fraction)) * width);
-  return "█".repeat(full) + "░".repeat(width - full);
 }
 
 /** Bytes per second sent to the room over the samples' span, or null if
@@ -500,45 +573,41 @@ function useDetails(id: string | null): Details | null {
 
 // ---------- pieces ----------
 
-function Header({ home, couch, engine, player }: { home: boolean; couch?: Couch; engine: string; player: string }) {
-  const right = couch ? (
-    <Box flexDirection="column" alignItems="flex-end">
-      <Text color={couch.error ? C.bad : C.accent}>
-        {couch.error ? `couch: ${couch.error}` : couch.link ? couch.link : "couch · opening the room…"}
-      </Text>
-      {home ? (
+/** Top right: the room's link and who's in it, or the engine and player. */
+function Status({ couch, engine, player }: { couch?: Couch; engine: string; player: string }) {
+  if (!couch) {
+    return (
+      <Box flexDirection="column" alignItems="flex-end" justifyContent="flex-end">
         <Text color={C.mute}>
-          {couch.room.people().length ? `in the room: ${couch.room.people().join(", ")}` : "nobody in the room yet"} · {engine}
+          {engine} · {player}
         </Text>
-      ) : null}
-    </Box>
-  ) : (
-    <Text color={C.mute}>
-      {engine} · {player}
-    </Text>
-  );
+      </Box>
+    );
+  }
+  const people = couch.room.people();
   return (
-    <Box justifyContent="space-between">
-      {home ? (
-        <Box flexDirection="column">
-          {LOGO.map((line) => (
-            <Text key={line} color={C.accent}>
-              {line}
-            </Text>
-          ))}
-        </Box>
-      ) : (
-        <Text color={C.accent} bold>
-          flick
-        </Text>
-      )}
-      {right}
+    <Box flexDirection="column" alignItems="flex-end" justifyContent="flex-end">
+      <Text color={couch.error ? C.bad : C.accent}>{couch.error ? `couch: ${couch.error}` : (couch.link ?? "couch · opening the room…")}</Text>
+      <Text color={C.mute}>
+        {people.length ? `in the room: ${people.join(", ")}` : "nobody in the room yet"} · {engine}
+      </Text>
     </Box>
   );
 }
 
 function Pointer({ on }: { on: boolean }) {
   return <Text color={C.accent}>{on ? "❯ " : "  "}</Text>;
+}
+
+/** A column header row, dim, lined up with the rows below it. */
+function Columns({ children }: { children: ReactNode }) {
+  return (
+    <Box flexShrink={0}>
+      <Text color={C.mute} wrap="truncate">
+        {children}
+      </Text>
+    </Box>
+  );
 }
 
 // One line, like every row, so a list's window can count entries as lines.
@@ -571,27 +640,30 @@ function Poster({ url }: { url: string }) {
   );
 }
 
-function TitleList({ entries, selected, height }: { entries: BrowseEntry[]; selected: number; height: number }) {
-  if (!entries.length) return <Text color={C.mute}>Nothing yet. Start typing.</Text>;
-  const [from, to] = windowOf(entries.length, selected, height);
+function TitleList({ rows, selected, height, empty }: { rows: TitleRow[]; selected: number; height: number; empty: string }) {
+  if (!rows.length) return <Text color={C.mute}>{empty}</Text>;
+  const [from, to] = windowOf(rows.length, selected, height);
+  const numberWidth = Math.max(2, String(rows.length).length);
   return (
     <Box flexDirection="column">
-      {entries.slice(from, to).map((entry, i) => {
-        if ("heading" in entry) return <SectionHeading key={entry.heading} text={entry.heading} />;
+      <Columns>
+        {"  "}
+        {"#".padStart(numberWidth)} Title
+      </Columns>
+      {rows.slice(from, to).map((row, i) => {
         const on = from + i === selected;
-        const t = entry.title;
+        const t = row.title;
         return (
-          <Box key={t.id + entry.note} flexShrink={0}>
+          <Box key={t.id + row.note} flexShrink={0}>
             <Pointer on={on} />
             <Text wrap="truncate">
-              <Text color={on ? "#FFFFFF" : C.text} bold={on}>
+              <Text color={C.mute}>{String(from + i + 1).padStart(numberWidth)} </Text>
+              <Text color={on ? C.accent : C.text} bold={on}>
                 {t.name}
               </Text>
-              <Text color={C.mute}>
-                {t.year ? `  ${t.year}` : ""}
-                {isSeries(t) ? "  show" : ""}
-                {entry.note ? `  ${entry.note}` : ""}
-              </Text>
+              <Text color={C.mute}>{t.year ? `  ${t.year}` : ""}</Text>
+              {isSeries(t) ? <Text color={C.warn}>{"  series"}</Text> : null}
+              {row.note ? <Text color={C.good}>{`  ${row.note}`}</Text> : null}
             </Text>
           </Box>
         );
@@ -602,24 +674,25 @@ function TitleList({ entries, selected, height }: { entries: BrowseEntry[]; sele
 
 function TitlePane({ title }: { title: Title }) {
   const d = useDetails(title.id);
-  const facts = [title.year, isSeries(title) ? "series" : null, d?.minutes ? `${d.minutes} min` : null, d?.genres.join(", ")].filter(Boolean);
+  const facts = [title.year, isSeries(title) ? "series" : null, d?.minutes ? `${d.minutes} min` : null].filter(Boolean);
   return (
     <Box flexShrink={0}>
       <Poster url={title.poster} />
       <Box flexDirection="column" flexGrow={1}>
-        <Text color={C.text} bold>
+        <Text color={C.accent} bold>
           {title.name}
         </Text>
         <Text color={C.mute}>{facts.join(" · ")}</Text>
+        {d?.genres.length ? <Text color={C.warn}>{d.genres.join(" · ")}</Text> : null}
         {d?.directors.length ? (
-          <Box marginTop={1}>
-            <Text color={C.mute}>directed by </Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text color={C.mute}>directed by</Text>
             <Text color={C.text}>{d.directors.join(", ")}</Text>
           </Box>
         ) : null}
         {d?.cast.length ? (
-          <Box>
-            <Text color={C.mute}>with </Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text color={C.mute}>with</Text>
             <Text color={C.text}>{d.cast.join(", ")}</Text>
           </Box>
         ) : null}
@@ -633,30 +706,38 @@ function TitlePane({ title }: { title: Title }) {
 
 function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { kind: "episodes" }>; selected: number; height: number }) {
   const seen = new Set(loadHistory().find((w) => w.id === screen.title.id)?.seen ?? []);
-  const [from, to] = windowOf(screen.list.length, selected, height - 2);
+  const [from, to] = windowOf(screen.list.length, selected, height - 1);
   return (
     <Box flexDirection="column">
-      <Text color={C.mute}>
-        {screen.anime ? `${screen.anime.romaji} · ${screen.anime.episodes} episodes` : screen.seasons.map((s) => (s === screen.season ? `[season ${s}]` : `${s}`)).join("  ")}
+      <Text wrap="truncate">
+        {screen.anime ? (
+          <Text color={C.mute}>
+            {screen.anime.romaji} · {screen.anime.episodes} episodes
+          </Text>
+        ) : (
+          screen.seasons.map((s) => (
+            <Text key={s} color={s === screen.season ? C.accent : C.mute} bold={s === screen.season}>
+              {s === screen.season ? `[${s}]` : ` ${s} `}{" "}
+            </Text>
+          ))
+        )}
       </Text>
-      <Box marginTop={1} flexDirection="column">
-        {screen.list.slice(from, to).map((ep, i) => {
-          const on = from + i === selected;
-          const tag = sxxeyy(ep.season, ep.number);
-          return (
-            <Box key={tag} flexShrink={0}>
-              <Pointer on={on} />
-              <Text wrap="truncate">
-                <Text color={C.mute}>{screen.anime ? String(ep.number).padStart(3) : tag} </Text>
-                <Text color={seen.has(tag) ? C.good : C.mute}>{seen.has(tag) ? "✓ " : "  "}</Text>
-                <Text color={on ? "#FFFFFF" : C.text} bold={on}>
-                  {ep.name || `Episode ${ep.number}`}
-                </Text>
+      {screen.list.slice(from, to).map((ep, i) => {
+        const on = from + i === selected;
+        const tag = sxxeyy(ep.season, ep.number);
+        return (
+          <Box key={tag} flexShrink={0}>
+            <Pointer on={on} />
+            <Text wrap="truncate">
+              <Text color={C.mute}>{screen.anime ? String(ep.number).padStart(3) : tag} </Text>
+              <Text color={seen.has(tag) ? C.good : C.mute}>{seen.has(tag) ? "✓ " : "  "}</Text>
+              <Text color={on ? C.accent : C.text} bold={on}>
+                {ep.name || `Episode ${ep.number}`}
               </Text>
-            </Box>
-          );
-        })}
-      </Box>
+            </Text>
+          </Box>
+        );
+      })}
     </Box>
   );
 }
@@ -668,7 +749,7 @@ function EpisodePane({ show, episode, anime }: { show: Title; episode: Episode; 
       <Poster url={show.poster} />
       <Box flexDirection="column" flexGrow={1}>
         <Text color={C.mute}>{anime ? `episode ${episode.number}` : sxxeyy(episode.season, episode.number)}</Text>
-        <Text color={C.text} bold>
+        <Text color={C.accent} bold>
           {episode.name || `Episode ${episode.number}`}
         </Text>
         {facts.length ? <Text color={C.mute}>{facts.join(" · ")}</Text> : null}
@@ -718,12 +799,11 @@ function SourceList({
   return (
     <Box flexDirection="column">
       {report ? <SiteLine sites={report.sites} hidden={screen.hidden} /> : <Text color={C.accent}>asking the sites…</Text>}
+      <Columns>{"  Seeds      Size  Quality                Src"}</Columns>
       {!entries.length && !asking ? (
-        <Box marginTop={1}>
-          <Text color={C.warn}>
-            {couch ? "No release every browser can play (MP4, H.264) for this one; plain flick still plays it. " : ""}No sources found.
-          </Text>
-        </Box>
+        <Text color={C.warn}>
+          {couch ? "No release every browser can play (MP4, H.264) for this one; plain flick still plays it. " : ""}No sources found.
+        </Text>
       ) : null}
       {entries.slice(from, to).map((entry, i) => {
         if ("heading" in entry) return <SectionHeading key={entry.heading} text={entry.heading} />;
@@ -734,10 +814,9 @@ function SourceList({
           <Box key={t.infoHash + (entry.pick ? "pick" : "")} flexShrink={0}>
             <Pointer on={on} />
             <Text wrap="truncate">
-              <Text color={t.seeders > 20 ? C.good : t.seeders > 0 ? C.warn : C.bad}>{String(t.seeders).padStart(5)}▲ </Text>
-              <Text color={C.mute}>{humanSize(t.bytes).padStart(8)} </Text>
-              <Text color={on ? "#FFFFFF" : C.text} bold={on}>
-                {" "}
+              <Text color={t.seeders > 20 ? C.good : t.seeders > 0 ? C.warn : C.bad}>{String(t.seeders).padStart(5)}</Text>
+              <Text color={C.mute}>{humanSize(t.bytes).padStart(10)}  </Text>
+              <Text color={on ? C.accent : C.text} bold={on}>
                 {qualityLabel(t.name).slice(0, 22).padEnd(23)}
               </Text>
               <Text color={SOURCE_COLOR[tag] ?? C.mute}>{tag}</Text>
@@ -757,6 +836,7 @@ function SourcePane({ torrent, pick, poster, couch }: { torrent: Torrent; pick: 
     <Box flexShrink={0}>
       <Poster url={poster} />
       <Box flexDirection="column" flexGrow={1}>
+        {pick ? <Text color={C.accent}>◆ flick's pick</Text> : null}
         <Text color={C.text} bold>
           {torrent.name}
         </Text>
@@ -765,16 +845,16 @@ function SourcePane({ torrent, pick, poster, couch }: { torrent: Torrent; pick: 
             {humanSize(torrent.bytes)} · {torrent.seeders} seeders · {sourceTag(torrent.source)}
           </Text>
         </Box>
-        <Text color={C.text}>{[q.res, q.hdr, q.codec, q.src].filter(Boolean).join(" · ") || "quality not in the name"}</Text>
+        <Text color={C.warn}>{[q.res, q.hdr, q.codec, q.src].filter(Boolean).join(" · ") || "quality not in the name"}</Text>
         {audio ? <Text color={C.text}>audio {audio}</Text> : null}
         {couch ? null : (
           <Box marginTop={1}>
-            <Text color={playable ? C.good : C.mute}>{playable ? "works in flick couch (MP4 H.264)" : "not for flick couch: browsers can't play it"}</Text>
+            <Text color={playable ? C.good : C.mute}>{playable ? "✓ works in flick couch" : "not for flick couch: browsers can't play it"}</Text>
           </Box>
         )}
         {pick ? (
           <Box marginTop={1}>
-            <Text color={C.accent}>flick's pick: 1080p x264 under 6 GB, the most seeders</Text>
+            <Text color={C.mute}>picked for 1080p x264 under 6 GB, with the most seeders</Text>
           </Box>
         ) : null}
       </Box>
@@ -782,25 +862,27 @@ function SourcePane({ torrent, pick, poster, couch }: { torrent: Torrent; pick: 
   );
 }
 
-function Playing({ screen, couch, upload }: { screen: Extract<Screen, { kind: "playing" }>; couch?: Couch; upload: number | null }) {
+function Playing({ screen, couch, upload, barWidth }: { screen: Extract<Screen, { kind: "playing" }>; couch?: Couch; upload: number | null; barWidth: number }) {
   const d = useDetails(screen.title?.id ?? null);
   const p = screen.progress;
   return (
     <Box flexShrink={0}>
       {screen.title ? <Poster url={screen.title.poster} /> : null}
       <Box flexDirection="column" flexGrow={1}>
-        <Text color={C.text} bold>
+        <Text color={C.accent} bold>
           {screen.label}
         </Text>
-        {screen.error ? <Text color={C.bad}>✗ {screen.error}</Text> : <Text color={C.accent}>● {screen.status}</Text>}
+        {screen.error ? <Text color={C.bad}>✗ {screen.error}</Text> : <Text color={C.text}>● {screen.status}</Text>}
         {p ? (
           <Box flexDirection="column" marginTop={1}>
             <Text>
-              <Text color={C.accent}>{bar(p.percent / 100, 30)}</Text>
-              <Text color={C.text}> {p.percent >= 100 ? "downloaded" : `${p.percent}%`}</Text>
+              <Text color={C.mute}>↓ </Text>
+              <ProgressBar percent={p.percent} width={Math.max(10, barWidth)} animate={p.percent < 100} />
+              <Text color={C.text}> {p.percent >= 100 ? "on disk" : `${p.percent}%`}</Text>
             </Text>
             <Text color={C.mute}>
-              {p.percent < 100 ? `↓ ${humanSize(p.downBytesPerSec)}/s · ` : ""}
+              {"  "}
+              {p.percent < 100 ? `${humanSize(p.downBytesPerSec)}/s · ` : ""}
               {p.peers} {p.peers === 1 ? "peer" : "peers"}
             </Text>
           </Box>
@@ -833,7 +915,7 @@ function RoomCard({ couch, torrent, minutes, upload }: { couch: Couch; torrent: 
     const ok = !need || upload >= need * 0.9;
     health = (
       <Text color={ok ? C.good : C.warn}>
-        upload {humanSize(upload)}/s{need ? ` · the film needs ${humanSize(need)}/s` : ""} · {ok ? "keeping up" : "may buffer"}
+        ↑ {humanSize(upload)}/s{need ? ` · the film needs ${humanSize(need)}/s` : ""} · {ok ? "keeping up" : "may buffer"}
       </Text>
     );
   }
@@ -846,7 +928,6 @@ function RoomCard({ couch, torrent, minutes, upload }: { couch: Couch; torrent: 
       {couch.link ? (
         <Box marginTop={1}>
           <Text color={C.accent}>{couch.link}</Text>
-          <Text color={C.mute}> · c copies it</Text>
         </Box>
       ) : null}
     </Box>
@@ -858,9 +939,10 @@ function Help() {
     ["type", "search films and shows (IMDb)"],
     ["⏎", "open a title, an episode, or play a source"],
     ["↑ ↓", "move"],
+    ["tab", "home sections: continue, films, shows"],
     ["← →", "change season"],
     ["c", "couch: copy the room link while a film is on"],
-    ["esc", "back, clear the search, or quit"],
+    ["esc", "back, clear the search, or home"],
     ["paste", "a magnet link or info hash plays it straight away"],
     ["ctrl+c", "quit; no torrent keeps uploading after flick closes"],
   ];
@@ -872,7 +954,9 @@ function Help() {
           <Text color={C.text}>{v}</Text>
         </Box>
       ))}
-      <Text color={C.mute}>any key closes this</Text>
+      <Box marginTop={1}>
+        <Text color={C.mute}>any key closes this</Text>
+      </Box>
     </Box>
   );
 }

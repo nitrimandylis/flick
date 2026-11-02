@@ -6,7 +6,8 @@ import { playerPage } from "./players.ts";
 import { parseYifyEnglish, srtToVtt } from "./subtitles.ts";
 import { parseDetails, parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
 import { audioLabel, browserPlayable, hashOf, matchesShow, pickBest, qualityLabel, withTrackers, type Torrent } from "./torrents.ts";
-import { bar, clock, firstRow, homeEntries, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
+import { clock, continueRows, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
+import { lerpHex, sheenIntensity } from "./look.tsx";
 import { placeholderLines } from "./poster.ts";
 import { trimCache } from "./store.ts";
 import { applySet, crossedToggle, currentTime, emptyState } from "./room.ts";
@@ -190,16 +191,12 @@ describe("tui", () => {
     expect(nextRow(entries, 1, -1)).toBe(1); // stays at the top
   });
 
-  test("home: continue watching, then trending, with headings", () => {
-    const history = [{ id: "tt1", name: "The Mentalist", year: 2008, kind: "tvSeries", poster: "", season: 4, episode: 14, at: 0 }];
-    const film = { id: "tt2", name: "Wicker", year: 2026, kind: "movie", poster: "", cast: "" };
-    const entries = homeEntries(history, [film], []);
-    expect(entries.map((e) => ("heading" in e ? `# ${e.heading}` : `${e.title.name} ${e.note}`.trim()))).toEqual([
-      "# Continue watching",
-      "The Mentalist S04E15 next",
-      "# Trending films",
-      "Wicker",
-    ]);
+  test("continue watching: the next episode for shows, watched for films", () => {
+    const history = [
+      { id: "tt1", name: "The Mentalist", year: 2008, kind: "tvSeries", poster: "", season: 4, episode: 14, at: 0 },
+      { id: "tt2", name: "Corpse Bride", year: 2005, kind: "movie", poster: "", at: 0 },
+    ];
+    expect(continueRows(history).map((r) => `${r.title.name} ${r.note}`)).toEqual(["The Mentalist S04E15 next", "Corpse Bride watched"]);
   });
 
   test("details: director and cast from IMDb's credits", () => {
@@ -222,7 +219,9 @@ describe("tui", () => {
   test("small formatters", () => {
     expect(clock(3733)).toBe("1:02:13");
     expect(clock(725)).toBe("12:05");
-    expect(bar(0.5, 4)).toBe("██░░");
+    expect(lerpHex("#000000", "#FFFFFF", 0.5)).toBe("#808080");
+    expect(sheenIntensity(0, 0)).toBeCloseTo(0.9);
+    expect(sheenIntensity(10, 0)).toBe(0);
     expect(uploadRate([[0, 0], [2000, 4000]])).toBe(2000);
     expect(uploadRate([[0, 0]])).toBeNull();
     expect(audioLabel("Dune.2021.2160p.REMUX.DTS-HD.MA.TrueHD.7.1.Atmos")).toBe("TrueHD DTS-HD MA 7.1 Atmos");
