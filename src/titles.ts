@@ -13,10 +13,10 @@ export type Title = {
   kind: string; // "movie", "tvSeries", "tvMiniSeries", "tvMovie"
   poster: string; // image URL, may be empty
   cast: string; // a few names, from the suggestion API
-  rating: number | null; // filled in by details()
 };
 
-export type Episode = { season: number; number: number; name: string; rating: number | null };
+// flick shows no ratings anywhere: the film gets judged fresh.
+export type Episode = { season: number; number: number; name: string; plot: string; date: string; minutes: number };
 
 const KINDS = new Set(["movie", "tvSeries", "tvMovie", "tvMiniSeries"]);
 
@@ -35,7 +35,6 @@ export function parseSuggestions(list: any[]): Title[] {
       kind: x.qid,
       poster: x.i?.imageUrl ?? "",
       cast: typeof x.s === "string" ? x.s : "",
-      rating: null,
     }));
 }
 
@@ -88,30 +87,43 @@ export function parseTrending(json: any): Title[] {
       kind: t.titleType?.id ?? "",
       poster: t.primaryImage?.url ?? "",
       cast: "",
-      rating: t.ratingsSummary?.aggregateRating ?? null,
     }));
 }
 
 /** The most popular films or shows right now, by IMDb's daily popularity. */
 export async function trending(kind: "movie" | "tvSeries"): Promise<Title[]> {
   const json = await graphql(
-    `query { advancedTitleSearch(first: 20, sort: {sortBy: POPULARITY, sortOrder: ASC}, constraints: {titleTypeConstraint: {anyTitleTypeIds: ["${kind}"]}}) { edges { node { title { id titleText { text } releaseYear { year } titleType { id } ratingsSummary { aggregateRating } primaryImage { url } } } } } }`,
+    `query { advancedTitleSearch(first: 20, sort: {sortBy: POPULARITY, sortOrder: ASC}, constraints: {titleTypeConstraint: {anyTitleTypeIds: ["${kind}"]}}) { edges { node { title { id titleText { text } releaseYear { year } titleType { id } primaryImage { url } } } } } }`,
   );
   return parseTrending(json);
 }
 
-/** Rating, plot and runtime for one title, for the details pane. */
-export async function details(id: string): Promise<{ rating: number | null; plot: string; minutes: number; genres: string[] }> {
-  const json = await graphql(
-    `query { title(id: "${id}") { runtime { seconds } ratingsSummary { aggregateRating } plot { plotText { plainText } } genres { genres { text } } } }`,
-  );
+export type Details = { plot: string; minutes: number; genres: string[]; directors: string[]; cast: string[] };
+
+/** Plot, runtime, genres and the main people of one title, from IMDb's answer. Pure. */
+export function parseDetails(json: any): Details {
   const t = json?.data?.title;
+  const people = (category: string): string[] =>
+    (t?.principalCredits ?? [])
+      .find((c: any) => c.category?.id === category)
+      ?.credits?.map((c: any) => c.name?.nameText?.text)
+      .filter(Boolean) ?? [];
   return {
-    rating: t?.ratingsSummary?.aggregateRating ?? null,
     plot: t?.plot?.plotText?.plainText ?? "",
     minutes: t?.runtime?.seconds ? Math.round(t.runtime.seconds / 60) : 0,
     genres: (t?.genres?.genres ?? []).map((g: any) => g.text),
+    directors: people("director"),
+    cast: people("cast"),
   };
+}
+
+/** The details pane's facts for one title. */
+export async function details(id: string): Promise<Details> {
+  return parseDetails(
+    await graphql(
+      `query { title(id: "${id}") { runtime { seconds } plot { plotText { plainText } } genres { genres { text } } principalCredits { category { id } credits(limit: 3) { name { nameText { text } } } } } }`,
+    ),
+  );
 }
 
 /** Season numbers of a show, sorted. Pure. */
@@ -128,11 +140,14 @@ export function parseEpisodes(json: any): Episode[] {
     .map((e: any) => {
       const node = e.node ?? {};
       const at = node.series?.episodeNumber ?? {};
+      const d = node.releaseDate;
       return {
         season: at.seasonNumber ?? 0,
         number: at.episodeNumber ?? 0,
         name: node.titleText?.text ?? "",
-        rating: node.ratingsSummary?.aggregateRating ?? null,
+        plot: node.plot?.plotText?.plainText ?? "",
+        date: d?.year ? [d.year, d.month, d.day].filter(Boolean).map((n: number) => String(n).padStart(2, "0")).join("-") : "",
+        minutes: node.runtime?.seconds ? Math.round(node.runtime.seconds / 60) : 0,
       };
     })
     .filter((e: Episode) => e.number > 0)
@@ -146,7 +161,7 @@ export async function seasons(id: string): Promise<number[]> {
 export async function episodes(id: string, season: number): Promise<Episode[]> {
   return parseEpisodes(
     await graphql(
-      `query { title(id: "${id}") { episodes { episodes(first: 100, filter: {includeSeasons: ["${season}"]}) { edges { node { titleText { text } ratingsSummary { aggregateRating } series { episodeNumber { seasonNumber episodeNumber } } } } } } } }`,
+      `query { title(id: "${id}") { episodes { episodes(first: 100, filter: {includeSeasons: ["${season}"]}) { edges { node { titleText { text } plot { plotText { plainText } } releaseDate { year month day } runtime { seconds } series { episodeNumber { seasonNumber episodeNumber } } } } } } } }`,
     ),
   );
 }

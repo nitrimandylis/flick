@@ -81,6 +81,7 @@ export class Room {
   private vtt: string | null = null;
   private server: Server;
   sentBytes = 0;
+  lastChange: { action: string; by: string } | null = null; // "paused by Kat", for the TUI
   onChange: () => void = () => {}; // the TUI redraws who is here and what's sent
 
   private statePath: string;
@@ -229,6 +230,7 @@ export class Room {
       action = "done";
     }
     if (!action) return;
+    this.lastChange = { action, by: seat.name };
     this.save();
     this.broadcast(this.stateMessage(action, seat));
     this.onChange();

@@ -116,7 +116,8 @@ async function getJson(url: string, init: RequestInit = {}): Promise<any> {
 // ---------- the sources ----------
 
 // yts.mx is often blocked; the mirrors redirect to whichever domain is live.
-const YTS_HOSTS = ["yts.mx", "yts.am", "yts.rs"];
+// movies-api.accel.li is the API behind yts.gg; yts.rs answered every film with an empty list.
+const YTS_HOSTS = ["movies-api.accel.li", "yts.mx", "yts.am"];
 
 /** YTS by IMDb id: one film, its MP4 H.264 releases. */
 async function yts(imdbId: string): Promise<Torrent[]> {
@@ -126,7 +127,8 @@ async function yts(imdbId: string): Promise<Torrent[]> {
       const film = (json.data?.movies ?? []).find((m: any) => m.imdb_code === imdbId);
       if (!film) return [];
       return (film.torrents ?? []).map((t: any) => {
-        const name = `${film.title_long} [${[t.quality, t.type].filter(Boolean).join(" ")}] [YTS]`;
+        // The codec goes in the name: YTS has x265 releases, which browsers can't play.
+        const name = `${film.title_long} [${[t.quality, t.type, t.video_codec].filter(Boolean).join(" ")}] [YTS]`;
         return {
           name,
           infoHash: String(t.hash).toLowerCase(),
@@ -228,12 +230,15 @@ async function nyaa(query: string): Promise<Torrent[]> {
 
 // ---------- putting them together ----------
 
-export type SourceReport = { torrents: Torrent[]; offline: string[] };
+// One site's part in a search, for the status line under the search bar.
+export type Site = { name: string; state: "asking" | "done" | "offline"; found: number };
+export type SourceReport = { torrents: Torrent[]; sites: Site[] };
 
-/** Every source that applies to `wanted`, asked at once. Results are merged,
- *  de-duplicated by info hash, and sorted by seeders. Sources that fail are
- *  named in `offline` instead of failing the whole search. */
-export async function findSources(wanted: Wanted): Promise<SourceReport> {
+/** Every source that applies to `wanted`, asked at once. `onUpdate` gets the
+ *  merged list each time a site answers, so results show up as they arrive.
+ *  Results are de-duplicated by info hash and sorted by seeders. A site that
+ *  fails is marked offline instead of failing the whole search. */
+export async function findSources(wanted: Wanted, onUpdate: (report: SourceReport) => void = () => {}): Promise<SourceReport> {
   const jobs: { name: string; run: () => Promise<Torrent[]> }[] = [];
   const t = wanted.title;
 
@@ -253,29 +258,103 @@ export async function findSources(wanted: Wanted): Promise<SourceReport> {
     }
   }
 
-  const settled = await Promise.allSettled(jobs.map((job) => job.run()));
-  const offline = new Set<string>();
-  const seen = new Set<string>();
-  const torrents: Torrent[] = [];
-  settled.forEach((result, i) => {
-    if (result.status === "rejected") {
-      offline.add(jobs[i].name);
-      return;
-    }
-    for (const torrent of result.value) {
-      if (!torrent.infoHash || seen.has(torrent.infoHash)) continue;
-      seen.add(torrent.infoHash);
-      torrents.push(torrent);
-    }
-  });
+  // One status per site (Nyaa runs several queries but is one site).
+  const sites: Site[] = [];
+  const left = new Map<string, number>(); // queries still running per site
+  const failed = new Map<string, number>();
+  for (const job of jobs) {
+    if (!left.has(job.name)) sites.push({ name: job.name, state: "asking", found: 0 });
+    left.set(job.name, (left.get(job.name) ?? 0) + 1);
+  }
 
-  // Drop releases of a different, longer show ("House" vs "House of the Dragon").
+  const seen = new Map<string, number>(); // info hash -> its place in `torrents`
+  const torrents: Torrent[] = [];
+  const report = (): SourceReport => ({ torrents: relevantSorted(torrents, wanted), sites: sites.map((x) => ({ ...x })) });
+
+  await Promise.all(
+    jobs.map(async (job) => {
+      const site = sites.find((x) => x.name === job.name)!;
+      try {
+        for (const torrent of await job.run()) {
+          if (!torrent.infoHash) continue;
+          const at = seen.get(torrent.infoHash);
+          if (at === undefined) {
+            seen.set(torrent.infoHash, torrents.length);
+            torrents.push(torrent);
+            site.found++;
+          } else if (idMatched(torrent) && !idMatched(torrents[at])) {
+            torrents[at] = torrent; // the same file, but this copy was found by IMDb id
+            site.found++;
+          }
+        }
+      } catch {
+        failed.set(job.name, (failed.get(job.name) ?? 0) + 1);
+      }
+      const remaining = left.get(job.name)! - 1;
+      left.set(job.name, remaining);
+      if (remaining === 0) site.state = site.found === 0 && failed.has(job.name) ? "offline" : "done";
+      onUpdate(report());
+    }),
+  );
+  return report();
+}
+
+/** Drop releases of a different, longer show ("House" vs "House of the
+ *  Dragon"), then sort by seeders, most first. Pure. */
+function relevantSorted(torrents: Torrent[], wanted: Wanted): Torrent[] {
   let kept = torrents;
   if (wanted.kind !== "anime") {
-    const tag = wanted.kind === "episode" ? sxxeyy(wanted.season, wanted.episode) : String(t.year ?? "");
-    const relevant = torrents.filter((x) => matchesShow(x.name, t.name, tag));
+    const tag = wanted.kind === "episode" ? sxxeyy(wanted.season, wanted.episode) : String(wanted.title.year ?? "");
+    // YTS and EZTV were looked up by IMDb id, so they are right even when they
+    // name the film differently ("Dune: Part One").
+    const relevant = torrents.filter((x) => idMatched(x) || matchesShow(x.name, wanted.title.name, tag));
     if (relevant.length) kept = relevant;
   }
-  kept.sort((a, b) => b.seeders - a.seeders);
-  return { torrents: kept, offline: [...offline] };
+  return [...kept].sort((a, b) => b.seeders - a.seeders);
+}
+
+/** Found by IMDb id (YTS, EZTV) rather than by name. Pure. */
+function idMatched(t: Torrent): boolean {
+  return t.source === "YTS" || t.source === "EZTV";
+}
+
+// ---------- choosing ----------
+
+const PICK_MAX_BYTES = 6 * 1024 ** 3;
+
+/** The source flick suggests: 1080p x264 (plays everywhere), under 6 GB, with
+ *  the most seeders. Null when nothing fits. `torrents` is sorted by seeders. Pure. */
+export function pickBest(torrents: Torrent[]): Torrent | null {
+  for (const t of torrents) {
+    const q = parseQuality(t.name);
+    if (q.res === "1080p" && q.codec === "x264" && t.bytes > 0 && t.bytes < PICK_MAX_BYTES && t.seeders > 0) return t;
+  }
+  return null;
+}
+
+/** Sources grouped by resolution, biggest first, each group still sorted by
+ *  seeders. Groups with nothing in them are left out. Pure. */
+export function qualityGroups(torrents: Torrent[]): { label: string; torrents: Torrent[] }[] {
+  const order = ["2160p", "1080p", "720p", "480p", ""];
+  return order
+    .map((res) => ({
+      label: res || "other",
+      torrents: torrents.filter((t) => parseQuality(t.name).res === res),
+    }))
+    .filter((group) => group.torrents.length > 0);
+}
+
+/** The audio a release name mentions, like "DTS-HD MA 7.1 Atmos". Pure. */
+export function audioLabel(name: string): string {
+  const parts: string[] = [];
+  if (/truehd/i.test(name)) parts.push("TrueHD");
+  if (/dts[- .]?hd[- .]?ma/i.test(name)) parts.push("DTS-HD MA");
+  else if (/\bdts\b/i.test(name)) parts.push("DTS");
+  if (/\b(ddp|dd\+|e-?ac-?3)/i.test(name)) parts.push("DD+");
+  else if (/\b(dd|ac-?3)[ .]?\d/i.test(name) || /\bac3\b/i.test(name)) parts.push("DD");
+  if (/\baac/i.test(name)) parts.push("AAC");
+  const channels = name.match(/(?:^|\D)([2578])[ .]([01])(?!\d)/); // "DDP5.1", "7.1"
+  if (channels) parts.push(`${channels[1]}.${channels[2]}`);
+  if (/atmos/i.test(name)) parts.push("Atmos");
+  return parts.join(" ");
 }

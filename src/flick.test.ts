@@ -4,9 +4,10 @@ import { pickSubtitles, pickVideos } from "./engines.ts";
 import { parseArgs } from "./cli.tsx";
 import { playerPage } from "./players.ts";
 import { parseYifyEnglish, srtToVtt } from "./subtitles.ts";
-import { parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
-import { browserPlayable, hashOf, matchesShow, qualityLabel, withTrackers } from "./torrents.ts";
-import { sourceTag, windowOf } from "./ui.tsx";
+import { parseDetails, parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
+import { audioLabel, browserPlayable, hashOf, matchesShow, pickBest, qualityLabel, withTrackers, type Torrent } from "./torrents.ts";
+import { bar, clock, firstRow, homeEntries, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
+import { placeholderLines } from "./poster.ts";
 import { trimCache } from "./store.ts";
 import { applySet, crossedToggle, currentTime, emptyState } from "./room.ts";
 import { mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
@@ -150,4 +151,88 @@ test("a press made before its browser saw the other person's is dropped", () => 
   expect(crossedToggle(last, "guest", 7)).toBe(false); // saw it, then changed their mind
   expect(crossedToggle(last, "nick", 6)).toBe(false); // your own rapid toggles count
   expect(crossedToggle(null, "guest", 0)).toBe(false);
+});
+
+describe("tui", () => {
+  const GB = 1024 ** 3;
+  const t = (name: string, seeders: number, gb: number): Torrent => ({ name, seeders, bytes: gb * GB, infoHash: name, magnet: "", source: "TPB" });
+  const list = [
+    t("Dune.2021.1080p.BluRay.REMUX.AVC-FGT", 265, 37), // too big
+    t("Dune.2021.2160p.WEB-DL.HEVC", 203, 20),
+    t("Dune.2021.1080p.HDRip.X264-EVO", 146, 4.4), // the pick
+    t("Dune.2021.720p.x264", 31, 0.9),
+    t("Dune.2021.CAM", 3, 1),
+  ];
+
+  test("the pick is 1080p x264 under 6 GB with the most seeders", () => {
+    expect(pickBest(list)?.name).toBe("Dune.2021.1080p.HDRip.X264-EVO");
+    expect(pickBest([list[0], list[1]])).toBeNull();
+  });
+
+  test("sources: pick on top, then groups by resolution, headings skipped", () => {
+    const entries = sourceEntries(list);
+    const shape = entries.map((e) => ("heading" in e ? `# ${e.heading}` : e.torrent.name));
+    expect(shape).toEqual([
+      "# best pick",
+      "Dune.2021.1080p.HDRip.X264-EVO",
+      "# 2160p · 1",
+      "Dune.2021.2160p.WEB-DL.HEVC",
+      "# 1080p · 1",
+      "Dune.2021.1080p.BluRay.REMUX.AVC-FGT",
+      "# 720p · 1",
+      "Dune.2021.720p.x264",
+      "# other · 1",
+      "Dune.2021.CAM",
+    ]);
+    expect(firstRow(entries)).toBe(1);
+    expect(nextRow(entries, 1, 1)).toBe(3); // over the "2160p" heading
+    expect(nextRow(entries, 3, -1)).toBe(1);
+    expect(nextRow(entries, 1, -1)).toBe(1); // stays at the top
+  });
+
+  test("home: continue watching, then trending, with headings", () => {
+    const history = [{ id: "tt1", name: "The Mentalist", year: 2008, kind: "tvSeries", poster: "", season: 4, episode: 14, at: 0 }];
+    const film = { id: "tt2", name: "Wicker", year: 2026, kind: "movie", poster: "", cast: "" };
+    const entries = homeEntries(history, [film], []);
+    expect(entries.map((e) => ("heading" in e ? `# ${e.heading}` : `${e.title.name} ${e.note}`.trim()))).toEqual([
+      "# Continue watching",
+      "The Mentalist S04E15 next",
+      "# Trending films",
+      "Wicker",
+    ]);
+  });
+
+  test("details: director and cast from IMDb's credits", () => {
+    const d = parseDetails({
+      data: {
+        title: {
+          runtime: { seconds: 9300 },
+          plot: { plotText: { plainText: "Spice." } },
+          genres: { genres: [{ text: "Sci-Fi" }] },
+          principalCredits: [
+            { category: { id: "director" }, credits: [{ name: { nameText: { text: "Denis Villeneuve" } } }] },
+            { category: { id: "cast" }, credits: [{ name: { nameText: { text: "Zendaya" } } }] },
+          ],
+        },
+      },
+    });
+    expect(d).toEqual({ plot: "Spice.", minutes: 155, genres: ["Sci-Fi"], directors: ["Denis Villeneuve"], cast: ["Zendaya"] });
+  });
+
+  test("small formatters", () => {
+    expect(clock(3733)).toBe("1:02:13");
+    expect(clock(725)).toBe("12:05");
+    expect(bar(0.5, 4)).toBe("██░░");
+    expect(uploadRate([[0, 0], [2000, 4000]])).toBe(2000);
+    expect(uploadRate([[0, 0]])).toBeNull();
+    expect(audioLabel("Dune.2021.2160p.REMUX.DTS-HD.MA.TrueHD.7.1.Atmos")).toBe("TrueHD DTS-HD MA 7.1 Atmos");
+    expect(audioLabel("Movie.1080p.WEB.DDP5.1.x264")).toBe("DD+ 5.1");
+  });
+
+  test("poster placeholders: one line per row, each opening with its row mark", () => {
+    const lines = placeholderLines(7, 3, 2);
+    expect(lines.length).toBe(2);
+    expect(lines[0]).toBe("\x1b[38;5;7m\u{10EEEE}\u0305\u0305\u{10EEEE}\u{10EEEE}\x1b[39m");
+    expect(lines[1].includes("\u{10EEEE}\u030D\u0305")).toBe(true);
+  });
 });

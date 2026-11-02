@@ -1,58 +1,47 @@
-# couch
+# flick
 
-Watch a film together from two places, in sync, without screen sharing.
+Search a film or a show, pick a source, watch. Torrents streamed from your
+own computer, in a full-screen terminal UI. `flick couch` watches a film with
+someone far away, in sync, without screen sharing.
 
 ## What it is
 
-Two people open the same bookmarked room at couch.nicktrim.com. The film is a
-plain MP4 that both browsers play in an ordinary `<video>`; a Cloudflare
-Durable Object relays play, pause and seek between them, exactly.
+- **Search first:** titles come from IMDb, then sources for the one you
+  pick (YTS and EZTV by IMDb id, The Pirate Bay, Knaben, Nyaa for anime).
+  Pasting a magnet plays it straight away.
+- **Two panes:** the list on the left, details on the right for whatever is
+  highlighted: poster (kitty graphics, in kitty and Ghostty on macOS), year,
+  runtime, genres, director, cast and plot; an episode's plot and air date;
+  a source's full release name, size, seeders, codec and audio. Under 100
+  columns the pane hides.
+- **Home:** continue watching, then trending films and shows.
+- **Sources:** flick's pick on top (1080p x264 under 6 GB, the most seeders),
+  then grouped by resolution. Results stream in as each site answers, with
+  a status per site.
+- **No ratings anywhere**, on purpose: the film gets judged fresh.
+- **Pluggable:** engine rqbit if installed, else webtorrent (built in).
+  Player IINA, then mpv, then VLC, then the browser. Series play solo.
+- **Cache:** 10 GB cap, least recently watched evicted. Nothing seeds after
+  flick closes.
 
-The film comes from the host's Mac: `cine couch <title>` (in the cine repo)
-picks a film and a torrent every browser can play (MP4, H.264), streams it
-with rqbit, serves only that file and its English subtitles from a gatekeeper
-behind a random token, and opens an anonymous Cloudflare quick tunnel to it.
-It tells the room the film and the tunnel URL. Everything lives as long as
-that command runs. The other person only ever opens the room link.
+## flick couch
 
-Voice stays outside the app: an audio-only call, with headphones on.
+`flick couch [title]` serves the room page, the play/pause/seek sync and the
+film from the host's computer through a Cloudflare tunnel: a named tunnel on
+a fixed address if one is configured (Nick: couch.nicktrim.com), otherwise a
+random trycloudflare address. The other person opens one link in a desktop
+browser, nothing to install. Couch offers only files every browser plays
+(MP4, H.264) and hides the rest with a count.
 
-## How a night goes
+The playing screen shows who is in the room, where the room is ("paused by
+Kat at 1:02:13"), and whether the host's upload keeps up with the film;
+`c` copies the room link. At the end both rate the film 1 to 5, blind.
 
-1. Both open the room bookmark and press **sit down**.
-2. The host runs `cine couch <title>` (or presses `c` on a film in cine's
-   Stream tab), picks the film and a source. It appears for both of you.
-3. Watch. The pill shows who is here, the clock, an English subtitles toggle
-   (per person) and whether you are in sync; more than 3 s apart turns it
-   magenta with a Resync button.
-4. At the end both land on a details page and rate it 1 to 5 blind. **Done**
-   returns to the empty room. cine shuts the tunnel when the film ends, or on
-   Ctrl-C.
-
-## Decisions that matter
-
-- No third-party player and no scraping: the file is ours, served from the
-  host's Mac. The vidlink-based first version (iframe, reload sync, a proxy
-  that stripped its ads) was deleted for being the most fragile thing built.
-- A media event is only reported when it disagrees with the room. Followers
-  seek 1.5 s ahead when the room is playing (the jump re-buffers through the
-  tunnel); seeks within 2.5 s of the room count as following, not a person.
-- Everyone, the host included, streams through the tunnel: a public page
-  reading this Mac's 127.0.0.1 makes Chrome ask for local network access.
-- The room only accepts `*.trycloudflare.com` stream URLs and IMDb ids. If the
-  source disconnects, the film stays, paused; the same film returning resumes.
-- Film details come from Wikidata and Wikipedia by IMDb id (IMDb itself
-  refuses Cloudflare's servers). No IMDb rating is shown, by choice.
-- Movies only.
-
-## Known limits
-
-- The host's Mac must stay awake and online for the whole film (cine runs
-  `caffeinate` while it streams). It runs on the host's mobile hotspot today:
-  1080p is about 2 GB down for the torrent plus 2 GB up per viewer.
-- Films without an MP4 H.264 release can't be couch films; cine says so.
-- Quick tunnels come without an uptime guarantee from Cloudflare.
+Voice stays outside: an audio-only call, headphones on.
 
 ## Where it is headed
 
-- A shared history of finished films, from the ratings already stored.
+1. Shrink cine back to Village Cinemas and ticket alerts (its Stream tab and
+   `cine couch` go).
+2. Publish `@nitrimandylis/flick` to npm through a GitHub release (OIDC),
+   with a README, man page and agent skill.
