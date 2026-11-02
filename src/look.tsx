@@ -102,30 +102,32 @@ export function Marquee({ chase = false }: { chase?: boolean }) {
 
 // ---------- viewfinder panels ----------
 
-/** A panel framed like a camera viewfinder: only its four corners are marked,
- *  and the title sits in the top left corner. */
+/** A panel in a thin square frame, its title set into the top line:
+ *  ┌─ Title · 3 ───────┐ */
 export function Viewfinder(props: { title: string; count?: number; width: number; height?: number; focused?: boolean; children: ReactNode }) {
-  const corner = props.focused ? C.accent : C.rule;
+  const line = props.focused ? C.accent : C.rule;
   const label = props.count === undefined ? props.title : `${props.title} · ${props.count}`;
-  const gap = Math.max(0, props.width - 3 - label.length - 2);
+  const rest = Math.max(0, props.width - 3 - label.length - 2);
   return (
     <Box flexDirection="column" width={props.width} flexShrink={0}>
       <Text wrap="truncate">
-        <Text color={corner}>{"┌─ "}</Text>
+        <Text color={line}>{"┌─ "}</Text>
         <Text color={props.focused ? C.accent : C.text} bold>
           {label}
         </Text>
-        {" ".repeat(gap)}
-        <Text color={corner}>{"─┐"}</Text>
+        <Text color={line}>{` ${"─".repeat(rest)}┐`}</Text>
       </Text>
-      <Box flexDirection="column" paddingX={1} height={props.height === undefined ? undefined : Math.max(1, props.height - 2)} overflow="hidden">
+      <Box
+        flexDirection="column"
+        borderStyle="single"
+        borderTop={false}
+        borderColor={line}
+        paddingX={1}
+        height={props.height === undefined ? undefined : Math.max(2, props.height - 1)}
+        overflow="hidden"
+      >
         {props.children}
       </Box>
-      <Text>
-        <Text color={corner}>{"└─"}</Text>
-        {" ".repeat(Math.max(0, props.width - 4))}
-        <Text color={corner}>{"─┘"}</Text>
-      </Text>
     </Box>
   );
 }
