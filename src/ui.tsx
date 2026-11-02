@@ -428,9 +428,12 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
           {"   "}
           {SECTIONS.map((name) => {
             const on = screen.kind === "browse" && !query.trim() && name === section;
+            // the gap stays outside the underline
             return (
-              <Text key={name} color={on ? C.accent : C.mute} bold={on} underline={on}>
-                {name.toLowerCase()}
+              <Text key={name}>
+                <Text color={on ? C.accent : C.mute} bold={on} underline={on}>
+                  {name.toLowerCase()}
+                </Text>
                 {"   "}
               </Text>
             );
@@ -742,9 +745,11 @@ function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { k
           </Text>
         ) : (
           screen.seasons.map((s) => (
-            <Text key={s} color={s === screen.season ? C.accent : C.mute} bold={s === screen.season} underline={s === screen.season}>
-              {`season ${s}`}
-              <Text>{"   "}</Text>
+            <Text key={s}>
+              <Text color={s === screen.season ? C.accent : C.mute} bold={s === screen.season} underline={s === screen.season}>
+                {`season ${s}`}
+              </Text>
+              {"   "}
             </Text>
           ))
         )}
