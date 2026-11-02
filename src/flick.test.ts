@@ -235,7 +235,8 @@ describe("tui", () => {
   test("poster placeholders: one line per row, each opening with its row mark", () => {
     const lines = placeholderLines(7, 3, 2);
     expect(lines.length).toBe(2);
-    expect(lines[0]).toBe("\x1b[38;5;7m\u{10EEEE}\u0305\u0305\u{10EEEE}\u{10EEEE}\x1b[39m");
+    expect(lines[0]).toBe("\x1b[38;2;0;0;7m\u{10EEEE}\u0305\u0305\u{10EEEE}\u{10EEEE}\x1b[39m");
+    expect(placeholderLines(0x123456, 1, 1)[0].startsWith("\x1b[38;2;18;52;86m")).toBe(true); // id in the 24-bit colour
     expect(lines[1].includes("\u{10EEEE}\u030D\u0305")).toBe(true);
   });
 });

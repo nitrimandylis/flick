@@ -34,12 +34,14 @@ const MARKS = [
   0x35b, 0x363, 0x364, 0x365, 0x366, 0x367, 0x368, 0x369, 0x36a, 0x36b, 0x36c, 0x36d, 0x36e, 0x36f,
 ].map((code) => String.fromCodePoint(code));
 
-/** The text lines that draw picture `id`: each row's first cell names its row
- *  and column 0; the cells after it count on by themselves. Pure. */
+/** The text lines that draw picture `id`: the id travels as the cells' 24-bit
+ *  colour; each row's first cell names its row and column 0, and the cells
+ *  after it count on by themselves. Pure. */
 export function placeholderLines(id: number, cols: number, rows: number): string[] {
+  const colour = `\x1b[38;2;${(id >> 16) & 255};${(id >> 8) & 255};${id & 255}m`;
   const lines: string[] = [];
   for (let row = 0; row < rows; row++) {
-    lines.push(`\x1b[38;5;${id}m` + CELL + MARKS[row] + MARKS[0] + CELL.repeat(cols - 1) + "\x1b[39m");
+    lines.push(colour + CELL + MARKS[row] + MARKS[0] + CELL.repeat(cols - 1) + "\x1b[39m");
   }
   return lines;
 }
@@ -48,7 +50,9 @@ export function placeholderLines(id: number, cols: number, rows: number): string
 // it was sent for, so a big and a small copy are two pictures.
 const shown = new Map<string, number>(); // "url|cols|rows" -> picture id in the terminal
 const loading = new Set<string>();
-let nextId = 1; // ids 1-255, because the id travels as a 256-colour number
+// The terminal keeps pictures after flick quits, so each run numbers its own
+// from a random point: a new run never draws an old run's picture.
+let nextId = 1 + Math.floor(Math.random() * 0xfff000);
 
 /** The id of a poster the terminal already has at this size, or null. */
 export function posterId(url: string, cols: number, rows: number): number | null {
@@ -63,9 +67,7 @@ export async function loadPoster(url: string, cols: number, rows: number): Promi
   loading.add(key);
   try {
     const png = await posterPng(url);
-    const id = nextId;
-    nextId = nextId === 255 ? 1 : nextId + 1;
-    for (const [oldKey, oldId] of shown) if (oldId === id) shown.delete(oldKey); // that id gets reused
+    const id = nextId++;
     sendPicture(id, png, cols, rows);
     shown.set(key, id);
   } catch {
@@ -78,9 +80,9 @@ export async function loadPoster(url: string, cols: number, rows: number): Promi
 /** The poster as PNG, from the cache folder or downloaded and converted once. */
 async function posterPng(url: string): Promise<Buffer> {
   mkdirSync(POSTER_DIR, { recursive: true });
-  // IMDb's image server resizes on request: 600 px wide stays sharp on a
-  // Retina screen even for the big poster.
-  const sized = url.replace(/\._V1_.*\.jpg$/, "._V1_SX600.jpg");
+  // IMDb's image server resizes on request: 400 px wide is sharp at these
+  // sizes and quick to convert and send.
+  const sized = url.replace(/\._V1_.*\.jpg$/, "._V1_SX400.jpg");
   const name = createHash("sha1").update(sized).digest("hex");
   const png = join(POSTER_DIR, `${name}.png`);
   if (!existsSync(png)) {
