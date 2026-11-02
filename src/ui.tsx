@@ -18,6 +18,7 @@ import {
   audioLabel,
   browserPlayable,
   findSources,
+  whyNotCouch,
   hashOf,
   humanSize,
   magnetFromHash,
@@ -986,7 +987,7 @@ function SourceList({
                 <Text color={C.mute}> 1080p x264 under 6 GB, the most seeders   </Text>
               </>
             ) : null}
-            {couch ? null : browserPlayable(t.name) ? <Text color={C.good}>✓ works in flick couch</Text> : <Text color={C.rule}>not for flick couch</Text>}
+            {couch ? null : whyNotCouch(t.name) === null ? <Text color={C.good}>✓ works in flick couch</Text> : <Text color={C.rule}>not for flick couch: {whyNotCouch(t.name)}</Text>}
           </Text>
         </Box>
       ) : null}

@@ -268,3 +268,11 @@ describe("polish", () => {
     expect(resolutionLabel("")).toBe("SD");
   });
 });
+
+test("couch says why a release won't play in a browser", () => {
+  const { whyNotCouch } = require("./torrents.ts");
+  expect(whyNotCouch("The.Nightmare.Before.Christmas.1993.1080p.BluRay.x264.anoXmous")).toContain("MKV");
+  expect(whyNotCouch("Dune.2021.2160p.WEB-DL.HEVC")).toContain("HEVC");
+  expect(whyNotCouch("Dune: Part One (2021) [1080p web x264] [YTS]")).toBeNull();
+  expect(whyNotCouch("Film.2020.1080p.WEB.x264.mp4")).toBeNull();
+});

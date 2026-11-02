@@ -83,9 +83,20 @@ export function qualityLabel(name: string): string {
 /** Whether a file every browser plays: MP4 with H.264 video. YTS/YIFY releases
  *  are; others must say x264 and mp4. Used by `flick couch`. Pure. */
 export function browserPlayable(name: string): boolean {
-  if (/\b(x265|h\.?\s?265|hevc|10.?bit|av1)\b/i.test(name)) return false;
-  if (/\b(yts|yify)\b/i.test(name)) return true;
-  return /\b(x264|h\.?\s?264|avc)\b/i.test(name) && /\bmp4\b/i.test(name);
+  return whyNotCouch(name) === null;
+}
+
+/** Why a release can't go in a couch room, in a few words, or null if it can.
+ *  Browsers play MP4 with H.264 video; a release that doesn't say MP4 is
+ *  almost always an MKV, usually with AC3 or DTS sound, which they can't. Pure. */
+export function whyNotCouch(name: string): string | null {
+  if (/\b(x265|h\.?\s?265|hevc)\b/i.test(name)) return "HEVC video, which browsers can't play";
+  if (/\b10.?bit\b/i.test(name)) return "10-bit video, which browsers can't play";
+  if (/\bav1\b/i.test(name)) return "AV1 video, which not every browser plays";
+  if (/\b(yts|yify)\b/i.test(name)) return null;
+  if (!/\b(x264|h\.?\s?264|avc)\b/i.test(name)) return "the name doesn't say H.264";
+  if (!/\bmp4\b/i.test(name)) return "not an MP4 (most likely MKV), which browsers can't play";
+  return null;
 }
 
 /** Is torrent `name` really show `title` (and not a longer show that starts
