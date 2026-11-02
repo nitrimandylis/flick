@@ -1,9 +1,18 @@
 {
   "name": "@nitrimandylis/flick",
   "version": "0.1.0",
-  "description": "Search a film, pick a torrent, watch it now. Or watch it together, in sync, from two places.",
+  "description": "Search a film or a show, pick a torrent, watch it now in a full-screen terminal UI. Or watch together, in sync, from two places.",
+  "keywords": [
+    "torrent",
+    "streaming",
+    "tui",
+    "watch-party",
+    "cli",
+    "ink"
+  ],
   "license": "MIT",
   "author": "Nick Trimandylis",
+  "homepage": "https://github.com/nitrimandylis/flick#readme",
   "type": "module",
   "bin": {
     "flick": "dist/flick.js"
@@ -12,7 +21,11 @@
     "dist",
     "room",
     "man",
-    "flick-cli"
+    "README.md",
+    "LICENSE"
+  ],
+  "man": [
+    "man/flick.1"
   ],
   "engines": {
     "node": ">=22"
@@ -21,8 +34,12 @@
     "type": "git",
     "url": "git+https://github.com/nitrimandylis/flick.git"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "bun build src/cli.tsx --target=node --packages=external --outfile dist/flick.js",
+    "build": "bun build src/cli.tsx --target=node --format=esm --packages=external --outfile dist/flick.js",
+    "prepack": "bun run build",
     "dev": "bun src/cli.tsx",
     "test": "bun test src",
     "typecheck": "tsc --noEmit -p ."

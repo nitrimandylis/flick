@@ -1,0 +1,104 @@
+.TH FLICK 1 "2026-11-02" "flick 0.1.0" "User Commands"
+.SH NAME
+flick \- search a film or a show, pick a torrent, watch it now
+.SH SYNOPSIS
+.B flick
+[\fItitle\fR]
+[\fIoptions\fR]
+.br
+.B flick couch
+[\fItitle\fR]
+[\fIoptions\fR]
+.SH DESCRIPTION
+.B flick
+is a full\-screen terminal UI. It opens on a splash, then a wall of posters:
+what you were watching and what is trending. Typing searches IMDb. Opening a
+title lists torrent sources from YTS, EZTV, The Pirate Bay, Knaben and Nyaa,
+with a suggested pick, and pressing enter streams it straight into a player.
+Shows get a season and episode list with watched marks and the next episode.
+.PP
+Films stream through a torrent engine on this computer while they download,
+so playback starts in seconds. They are cached, and nothing keeps uploading
+once a film is closed.
+.PP
+Posters are drawn with the kitty graphics protocol in kitty and Ghostty on
+macOS. Other terminals show cards with the title instead.
+.SH COMMANDS
+.TP
+.B flick
+Open flick: continue watching, trending films and shows, search.
+.TP
+.B flick \fItitle\fR
+Open flick already searching for \fItitle\fR.
+.TP
+.B flick couch \fR[\fItitle\fR]
+Watch a film together from two places. flick serves a room page, the play,
+pause and seek sync, and the film itself from this computer through a
+Cloudflare tunnel, and prints the room's link. The other person opens the link
+in a desktop browser; nothing to install. Only files every browser plays (MP4
+with H.264) are offered. Couch plays films, not shows.
+.SH OPTIONS
+.TP
+.BI \-\-engine " rqbit\fR|\fPwebtorrent"
+The torrent engine. Default: rqbit if it is installed, else the built\-in
+webtorrent.
+.TP
+.BI \-\-player " iina\fR|\fPmpv\fR|\fPvlc\fR|\fPbrowser"
+The player. Default: the first one installed, in that order.
+.TP
+.B \-\-dub
+Anime: prefer dual\-audio releases.
+.TP
+.BR \-h ", " \-\-help
+Show help.
+.TP
+.BR \-v ", " \-\-version
+Show the version.
+.SH KEYS
+.TP
+.B type
+Search films and shows.
+.TP
+.BR \(<- " " \(->
+Move along the poster wall; change season on a show.
+.TP
+.BR \(ua " " \(da
+Move through episodes and sources.
+.TP
+.B tab
+Switch section: continue, now showing, shows.
+.TP
+.B enter
+Open a title, an episode, or play a source.
+.TP
+.B c
+Couch: copy the room link while a film is on.
+.TP
+.B esc
+Back, clear the search, or return to the splash.
+.TP
+.B paste
+A magnet link or info hash plays straight away.
+.TP
+.B ctrl\-c
+Quit. The torrent, the room and the tunnel close with flick.
+.SH FILES
+.TP
+.I ~/.config/flick/config.json
+Settings: \fBengine\fR, \fBplayer\fR, \fBcacheGB\fR (default 10), \fBdub\fR,
+and for couch \fBroom\fR, \fBtunnelToken\fR and \fBtunnelHost\fR.
+.TP
+.I ~/.config/flick/history.json
+What you watched, for continue watching and the episode marks.
+.TP
+.I ~/.cache/flick/
+Films (capped at \fBcacheGB\fR, least recently watched removed first),
+subtitles and posters.
+.SH COUCH ON A FIXED ADDRESS
+By default a couch room gets a new random trycloudflare.com address each time.
+For one address that never changes, create a named Cloudflare tunnel routed to
+http://127.0.0.1:8765 and put its token and hostname in the config as
+\fBtunnelToken\fR and \fBtunnelHost\fR. The token is a secret.
+.SH SEE ALSO
+.BR rqbit (1),
+.BR mpv (1)

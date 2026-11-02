@@ -1,84 +1,102 @@
+```
+ ███████╗██╗     ██╗ ██████╗██╗  ██╗
+ ██╔════╝██║     ██║██╔════╝██║ ██╔╝
+ █████╗  ██║     ██║██║     █████╔╝
+ ██╔══╝  ██║     ██║██║     ██╔═██╗
+ ██║     ███████╗██║╚██████╗██║  ██╗
+ ╚═╝     ╚══════╝╚═╝ ╚═════╝╚═╝  ╚═╝
+```
+
 <div align="center">
 
-<img src="public/favicon.svg" width="72" alt="couch">
+### `SEARCH IT // PICK IT // WATCH IT NOW`
 
-### `TWO SEATS // ONE FILM // NO SCREEN SHARE`
+*a cinema lobby in your terminal: posters, torrents, and a couch for two people in two cities*
 
-*a film-sync room for two people in two places: the host's Mac streams the film, one Durable Object keeps time*
-
-![runtime](https://img.shields.io/badge/runtime-cloudflare_workers-3DF5FF?style=flat-square&labelColor=111111)
-![frontend](https://img.shields.io/badge/frontend-plain_html_+_js-3DF5FF?style=flat-square&labelColor=111111)
-![deps](https://img.shields.io/badge/runtime_deps-0-3DF5FF?style=flat-square&labelColor=111111)
-![seats](https://img.shields.io/badge/seats-2_(it's_a_couch)-FF3DCB?style=flat-square&labelColor=111111)
-![fans](https://img.shields.io/badge/laptop_fans-off-FF3DCB?style=flat-square&labelColor=111111)
+![npm](https://img.shields.io/npm/v/@nitrimandylis/flick?style=flat-square&labelColor=111111&color=3DF5FF)
+![node](https://img.shields.io/badge/node-22+-3DF5FF?style=flat-square&labelColor=111111)
+![license](https://img.shields.io/badge/license-MIT-3DF5FF?style=flat-square&labelColor=111111)
+![ratings](https://img.shields.io/badge/ratings_shown-0_(judge_it_yourself)-FF3DCB?style=flat-square&labelColor=111111)
+![seeding](https://img.shields.io/badge/seeding_after_you_quit-never-FF3DCB?style=flat-square&labelColor=111111)
 
 </div>
 
 ---
 
-## 🛋️ What is this
+## 🎬 What is this
 
-Watching a film over a video call means one laptop encodes the film live, uploads it, and runs a call on top. It is slow, it burns battery, and it heats the laptop. couch skips all of that: the film is a plain MP4 file, both browsers play it in an ordinary `<video>`, and only play, pause and seek travel between the two.
+flick is a full-screen terminal app for watching films and shows. It opens on a wall of posters (what you were watching, what is trending), you type to search IMDb, and opening a title lists torrent sources from five sites with one marked as the sensible pick. Press enter and it streams into IINA, mpv, VLC or your browser while it downloads, so the film starts in seconds instead of after the whole file arrives.
 
-The file comes from the host's Mac. [`cine couch`](https://github.com/nitrimandylis/cine) picks a film and a torrent every browser can play (MP4, H.264), streams it with rqbit, and puts it behind an anonymous Cloudflare quick tunnel that serves that one file and its English subtitles. The other person only opens the room link. When the film ends, you both land on a details page and rate it out of 5 blind, so nobody anchors the other (the argument after is the feature).
+`flick couch` is the other half. Two people, two places, one film: flick serves a room page, the play/pause/seek sync and the film itself from your computer through a Cloudflare tunnel, and prints a link. The other person opens it in a desktop browser and that is their entire setup. It replaced a video call with screen sharing, which was slow, hot, and loud enough to hear over the film.
 
 ```console
-nick@couch:~$ cine couch before sunrise
-Before Sunrise is on in your couch room · https://couch.nicktrim.com/r/k3x9q7ab12
-● in the room: Nick, Guest · streaming to them · 412 MB sent · downloaded · Ctrl-C to stop
+nick@flick:~$ flick couch
+[✓] room open: https://couch.example.com/r/9bc1zqc97c
+[i] kat joined. the laptop fan did not.
 ```
 
-## 🎬 The room
+## 🍿 The lobby
 
 | | feature | what it actually does |
 |---|---|---|
-| 01 | **sit down** | one click per visit, which is also what lets the player start with sound |
-| 02 | **the source** | `cine couch` on the host's Mac; the room plays whatever it sends, and holds the film paused if it stops |
-| 03 | **remote control** | pause, play and seek are native `<video>` calls on the other side, exact to the frame |
-| 04 | **the pill** | top right: who is here, the film, the clock, english subtitles per person, fullscreen; hides after 3 s |
-| 05 | **drift badge** | more than 3 s apart turns the dot magenta with a resync button (no surprise reloads mid-scene) |
-| 06 | **after the film** | backdrop, synopsis, director, runtime, then a blind 1 to 5 rating revealed when both have picked |
-| 07 | **permanent room** | the room remembers the film and the position, so tomorrow resumes where you stopped |
+| 01 | **poster wall** | real posters through the kitty graphics protocol (kitty, Ghostty), title cards everywhere else |
+| 02 | **search first** | titles from IMDb, then sources from YTS and EZTV (matched by IMDb id), The Pirate Bay, Knaben and Nyaa |
+| 03 | **the pick** | 1080p, x264, under 6 GB, most seeders. the 86 GB remux is still there, just not first |
+| 04 | **shows and anime** | seasons, episodes, watched marks, and which one is next |
+| 05 | **couch** | a browser room both people sit in; play, pause and seek stay in step, and flick tells you if your upload keeps up |
+| 06 | **pluggable** | engine rqbit or the built-in webtorrent, player IINA, mpv, VLC or the browser |
+| 07 | **cache with a cap** | 10 GB by default, least recently watched goes first, nothing seeds after a film closes |
+| 08 | **no ratings** | on purpose. you are about to watch it anyway |
 
 ## 🚀 Run it
 
-Needs [Bun](https://bun.sh) and a Cloudflare account. The film side needs [cine](https://github.com/nitrimandylis/cine) with rqbit and cloudflared.
+Node 22 or newer. rqbit (`brew install rqbit`) and IINA or mpv are optional and better; without them flick uses its built-in engine and your browser.
 
 ```bash
-git clone https://github.com/nitrimandylis/couch.git
-cd couch
-bunx wrangler dev        # local, http://localhost:8787
-bun check.ts             # two fake seats run through the whole protocol
-bunx wrangler deploy     # change the route in wrangler.jsonc first
+npx @nitrimandylis/flick              # run once, nothing installed
+npm i -g @nitrimandylis/flick         # or: bun add -g @nitrimandylis/flick
+flick
+flick couch
+man flick
 ```
 
-The deploy route points at couch.nicktrim.com, which you probably don't own.
+Type a title, press enter twice, and the film is playing. The second enter is the one you will regret at 2 am.
+
+### Couch on a fixed address
+
+A room gets a new random `trycloudflare.com` address each run. For one that never changes (a bookmark the other person keeps), create a named Cloudflare tunnel routed to `http://127.0.0.1:8765` and put its token and hostname in `~/.config/flick/config.json` as `tunnelToken` and `tunnelHost`. The token is a secret, so it lives only in that file.
+
+### For agents
+
+[`flick-cli/SKILL.md`](flick-cli/SKILL.md) is an agent skill. It covers setup, the couch tunnel, and the traps. flick is interactive from top to bottom, so the skill tells an agent to hand the user the command rather than run it: only `flick --help` and `flick --version` are safe from a tool call. Copy the directory into your agent's skills folder to install it.
 
 ## 🔩 Under the hood
 
 ```mermaid
 flowchart LR
-    C[cine couch on the host's Mac] -- film + tunnel URL --> DO[(Room Durable Object)]
-    R[rqbit] --> G[gatekeeper: one file, one token] --> T[Cloudflare quick tunnel]
-    T -- MP4 + VTT --> A[seat A video]
-    T -- MP4 + VTT --> B[seat B video]
-    A -- play / pause / seek --> DO
-    DO -- state + who did it --> B
+    T[terminal UI, Ink] --> I[IMDb: titles, posters, details]
+    T --> S[YTS · EZTV · TPB · Knaben · Nyaa]
+    S --> E[engine: rqbit or webtorrent]
+    E --> P[player: IINA · mpv · VLC · browser]
+    E --> R[couch room: page + sync + film]
+    R --> C[Cloudflare tunnel] --> B[their browser]
 ```
 
-One rule decides what counts as a person acting: a media event is only sent to the room when it disagrees with the room. A `play` while the room plays, or a seek that lands where the room is, is just the player following. If `cine couch` stops, the room pauses on an offline notice and keeps the film and its position; the same film coming back carries on from there.
-
-| file | path | job |
+| layer | path | job |
 |---|---|---|
-| worker | `src/worker.ts` | routes rooms, the Room Durable Object (state, relay, blind ratings), film details |
-| room page | `public/room.html`, `public/room.js` | gate, player, pill, subtitles toggle, curtain, toasts, end page |
-| landing | `public/index.html` | makes a room with a random 10-character id |
-| styles | `public/style.css` | cyan on blue-black, Space Grotesk and Space Mono, quiet motion |
-| check | `check.ts` | two seats and a fake cine: load, play, echo, source loss and return, blind rating, done |
+| cli | `src/cli.tsx` | arguments, help, picks the engine and player, starts the UI |
+| ui | `src/ui.tsx`, `src/look.tsx` | the lobby, episodes, sources and playing screens; marquee, film strip, badges |
+| posters | `src/poster.ts` | kitty graphics through Unicode placeholders, poster-tinted accents |
+| titles | `src/titles.ts`, `src/anime.ts` | IMDb search, details, seasons, episodes; AniList for anime |
+| sources | `src/torrents.ts` | the five sites, the pick, quality parsing, what a browser can play |
+| engines | `src/engines.ts` | rqbit over its HTTP API, or webtorrent in process |
+| couch | `src/couch.ts`, `src/room.ts`, `src/tunnel.ts`, `room/` | the room server, the sync rules, the tunnel, the page she opens |
 
-Film details come from Wikidata and Wikipedia by IMDb id, plus IMDb itself when it answers (it refuses Cloudflare's servers, so in production it usually doesn't). No IMDb rating is shown, on purpose.
+**Stack:** TypeScript · Ink · Node 22 · ws · webtorrent · cloudflared · Bun for builds and tests
 
-**Stack:** Cloudflare Workers · Durable Objects (SQLite, hibernating WebSockets) · plain HTML, CSS, JS · Bun
+## 🙏 Credits
+
+flick's list of torrent sources follows the one curated by [torlink](https://github.com/baairon/torlink) (bairon.dev, MIT), and its search-first terminal UI took inspiration from torlink's.
 
 ---
 
@@ -86,12 +104,8 @@ Film details come from Wikidata and Wikipedia by IMDb id, plus IMDb itself when 
 
 **[Nick Trimandylis](https://github.com/nitrimandylis)**
 
-`THE SCREEN SHARE IS DEAD. LONG LIVE THE PAUSE TOAST`
+`THE FILM STARTS WHEN YOU DO`
 
 MIT licensed.
 
 </div>
-
-## 🙏 Credits
-
-flick's list of torrent sources follows the one curated by [torlink](https://github.com/baairon/torlink) (bairon.dev, MIT), and its search-first terminal UI took inspiration from torlink's.

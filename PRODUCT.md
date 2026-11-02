@@ -39,9 +39,15 @@ Kat at 1:02:13"), and whether the host's upload keeps up with the film;
 
 Voice stays outside: an audio-only call, headphones on.
 
+## Releases
+
+npm package `@nitrimandylis/flick`. 0.1.0 goes up by hand (npm can only attach
+a trusted publisher to a package that exists). From 0.1.1 every release is a
+GitHub release: `.github/workflows/publish.yml` publishes it through OIDC, so
+no token and no local clone are needed.
+
 ## Where it is headed
 
-1. Shrink cine back to Village Cinemas and ticket alerts (its Stream tab and
-   `cine couch` go).
-2. Publish `@nitrimandylis/flick` to npm through a GitHub release (OIDC),
-   with a README, man page and agent skill.
+- A still PNG for the README (posters are kitty graphics, so vhs can't record
+  them), made by a committed `tapes/still.sh`.
+- Couch for shows, if MP4 H.264 TV releases turn out to be common enough.
