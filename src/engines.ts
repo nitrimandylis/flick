@@ -4,7 +4,6 @@
 
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import WebTorrent from "webtorrent";
 import { FILMS_DIR } from "./store.ts";
 import { which } from "./system.ts";
 
@@ -143,6 +142,17 @@ class Webtorrent implements Engine {
 
   private async ensure() {
     if (this.client) return;
+    // Loaded only when it is the engine in use: webtorrent needs native parts
+    // that some installs never build (bun blocks install scripts), and flick
+    // with rqbit must not crash on them.
+    let WebTorrent: any;
+    try {
+      WebTorrent = (await import("webtorrent")).default;
+    } catch {
+      throw new Error(
+        "the built-in engine's native parts aren't installed. Install rqbit (brew install rqbit), or reinstall flick with npm, or run: bun pm -g trust --all",
+      );
+    }
     this.client = new WebTorrent();
     const server = this.client.createServer({ hostname: "127.0.0.1" });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

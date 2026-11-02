@@ -60,6 +60,8 @@ flick couch
 man flick
 ```
 
+`bun add -g` skips install scripts, so the built-in engine's native parts are missing there: that is fine with rqbit installed, otherwise run `bun pm -g trust --all` once.
+
 Type a title, press enter twice, and the film is playing. The second enter is the one you will regret at 2 am.
 
 ### Couch on a fixed address

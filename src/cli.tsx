@@ -11,7 +11,7 @@ import { loadConfig } from "./store.ts";
 import { which } from "./system.ts";
 import { App } from "./ui.tsx";
 
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 
 const HELP = `flick ${VERSION}: search a film, pick a torrent, watch it now
 
