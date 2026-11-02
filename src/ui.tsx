@@ -70,7 +70,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   const [selected, setSelected] = useState(0);
   const [screen, setScreen] = useState<Screen>({ kind: "browse" });
   const [busy, setBusy] = useState("");
-  const [toast, setToast] = useState(""); // a short note at the bottom right
+  const [toast, setToast] = useState<{ text: string; kind: "ok" | "no" } | null>(null); // a short note at the bottom right
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [showHelp, setShowHelp] = useState(false);
   const session = useRef<Session | null>(null);
@@ -82,10 +82,11 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   const couch = props.couch;
   const [, redraw] = useState(0);
 
-  function showToast(text: string) {
-    setToast(text);
+  // "ok" confirms something; "no" explains why flick didn't do what was asked.
+  function showToast(text: string, kind: "ok" | "no" = "ok") {
+    setToast({ text, kind });
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(""), 2500);
+    toastTimer.current = setTimeout(() => setToast(null), 2500);
   }
 
   // A poster finished loading: redraw, so its colour reaches the titles.
@@ -144,7 +145,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
   async function openTitle(title: Title) {
     if (couch && isSeries(title)) {
-      showToast("couch plays films only");
+      showToast("couch plays films only", "no");
       return;
     }
     if (!isSeries(title)) return openSources({ kind: "film", title }, `${title.name}${title.year ? ` (${title.year})` : ""}`);
@@ -404,13 +405,13 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
 
   const inner = width - 2;
   // The big poster's height grows with the terminal; the small ones are 3/5 of it.
-  const big = posterSize(Math.max(8, Math.min(22, height - 18)));
+  const big = posterSize(Math.max(8, Math.min(22, height - 19)));
   const small = posterSize(Math.round(big.rows * 0.6));
   const stageHeight = height - 5; // header 2, hints 2, a spare row
 
   const hints: Hint[] =
     screen.kind === "browse"
-      ? [["←→", "browse"], ["⏎", "sources"], ["tab", "continue · now showing · shows"], ["type", "search"], ["esc", query ? "clear" : "home"]]
+      ? [["←→", "browse"], ["⏎", "sources"], ["tab", "section"], ["type", "search"], ["esc", query ? "clear" : "home"]]
       : screen.kind === "episodes"
         ? [["↑↓", "episode"], ["←→", "season"], ["⏎", "sources"], ["esc", "back"]]
         : screen.kind === "sources"
@@ -448,6 +449,20 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   return (
     <Box flexDirection="column" paddingX={1} height={height}>
       <Box justifyContent="space-between" flexShrink={0}>
+        {screen.kind !== "browse" ? (
+          <Text wrap="truncate">
+            <Text color={C.accent} bold>
+              flick
+            </Text>
+            {"   "}
+            {trail(screen, query, section).map((part, i, all) => (
+              <Text key={i}>
+                {i ? <Text color={C.rule}>{" › "}</Text> : null}
+                <Text color={i === all.length - 1 ? C.text : C.mute}>{part}</Text>
+              </Text>
+            ))}
+          </Text>
+        ) : (
         <Text wrap="truncate">
           <Text color={C.accent} bold>
             flick
@@ -466,6 +481,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
             );
           })}
         </Text>
+        )}
         {screen.kind === "browse" ? (
           <Text>
             <Text color={C.accent}>⌕ </Text>
@@ -478,11 +494,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
               <Text color={C.mute}>type to search</Text>
             )}
           </Text>
-        ) : (
-          <Text color={C.mute} wrap="truncate">
-            {screen.kind === "episodes" ? screen.title.name : screen.label}
-          </Text>
-        )}
+        ) : null}
       </Box>
 
       <Box marginTop={1} flexGrow={1} flexDirection="column" overflow="hidden">
@@ -492,18 +504,52 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
       <Box justifyContent="space-between" flexShrink={0}>
         <Hints hints={hints} message={busy && screen.kind !== "browse" ? busy : undefined} />
         {toast ? (
-          <Text backgroundColor={C.accent} color={C.ink} bold>
-            {` ✓ ${toast} `}
+          <Text backgroundColor={toast.kind === "ok" ? C.accent : C.warn} color={C.ink} bold>
+            {` ${toast.kind === "ok" ? "✓" : "–"} ${toast.text} `}
           </Text>
-        ) : (
-          <Status couch={couch} engine={props.engine.name} player={props.player} />
-        )}
+        ) : width >= 100 || couch ? (
+          <Status couch={couch} engine={props.engine.name} player={props.player} playing={screen.kind === "playing"} />
+        ) : null}
       </Box>
     </Box>
   );
 }
 
 // ---------- pure helpers (tested) ----------
+
+/** Where you are, for the header after browse: where you came from (the search
+ *  or the section), then the title, then the season or episode. Pure. */
+export function trail(screen: Screen, query: string, section: string): string[] {
+  const from = query.trim() ? `⌕ ${query.trim()}` : section.toLowerCase();
+  if (screen.kind === "episodes") return [from, screen.title.name, screen.anime ? "episodes" : `season ${screen.season}`];
+  if (screen.kind === "sources") {
+    if (screen.wanted.kind === "film") return [from, screen.label];
+    return [from, screen.wanted.title.name, screen.episodeTag ?? "", "sources"].filter(Boolean);
+  }
+  if (screen.kind === "playing") return screen.title ? [from, screen.label] : ["pasted magnet", screen.label];
+  return [from];
+}
+
+/** `text` word-wrapped to `width` columns, at most `lines` lines; if it runs
+ *  longer, the last line ends in "…" instead of stopping mid-word. Pure. */
+export function clip(text: string, width: number, lines: number): string[] {
+  const out: string[] = [];
+  let line = "";
+  for (const word of text.split(/\s+/).filter(Boolean)) {
+    if (!line) line = word;
+    else if (line.length + 1 + word.length <= width) line += " " + word;
+    else {
+      out.push(line);
+      line = word;
+    }
+  }
+  if (line) out.push(line);
+  if (out.length <= lines) return out;
+  const kept = out.slice(0, lines);
+  const last = kept[lines - 1].slice(0, width - 1).replace(/[\s.,;:]+$/, "");
+  kept[lines - 1] = last + "…";
+  return kept;
+}
 
 /** The slice of a long list that fits, keeping the selection visible. Pure. */
 export function windowOf(length: number, selected: number, height: number): [number, number] {
@@ -601,24 +647,25 @@ function useDetails(id: string | null): Details | null {
 // ---------- pieces ----------
 
 /** Top right: the room's link and who's in it, or the engine and player. */
-function Status({ couch, engine, player }: { couch?: Couch; engine: string; player: string }) {
+/** Bottom right: the engine and player, or in couch mode who's in the room
+ *  (or the link to send, while nobody is). One row. */
+function Status({ couch, engine, player, playing }: { couch?: Couch; engine: string; player: string; playing: boolean }) {
   if (!couch) {
     return (
-      <Box flexDirection="column" alignItems="flex-end" justifyContent="flex-end">
-        <Text color={C.mute}>
-          {engine} · {player}
-        </Text>
-      </Box>
+      <Text color={C.mute}>
+        {engine} · {player}
+      </Text>
     );
   }
+  if (couch.error) return <Text color={C.bad}>couch: {couch.error}</Text>;
   const people = couch.room.people();
+  // while a film is on, the room card has all of this
+  const what = playing ? engine : people.length ? people.join(", ") : (couch.link ?? "opening the room…");
   return (
-    <Box flexDirection="column" alignItems="flex-end" justifyContent="flex-end">
-      <Text color={couch.error ? C.bad : C.accent}>{couch.error ? `couch: ${couch.error}` : (couch.link ?? "couch · opening the room…")}</Text>
-      <Text color={C.mute}>
-        {people.length ? `in the room: ${people.join(", ")}` : "nobody in the room yet"} · {engine}
-      </Text>
-    </Box>
+    <Text wrap="truncate">
+      <Text color={C.bulb}>couch</Text>
+      <Text color={C.mute}> · {what}</Text>
+    </Text>
   );
 }
 
@@ -672,7 +719,13 @@ function Poster({ url, size, name = "", on = false }: { url: string; size: Size;
   }
   return (
     <Box width={size.cols} height={size.rows} flexShrink={0} borderStyle="round" borderColor={on ? C.accent : C.rule} justifyContent="center" alignItems="center" paddingX={1}>
-      <Text color={on ? C.text : C.mute}>{POSTERS ? "" : name}</Text>
+      <Box flexDirection="column" alignItems="center">
+        {POSTERS ? null : clip(name, size.cols - 4, size.rows - 2).map((line, i) => (
+          <Text key={i} color={on ? C.text : C.mute} wrap="truncate">
+            {line}
+          </Text>
+        ))}
+      </Box>
     </Box>
   );
 }
@@ -703,32 +756,35 @@ function Lobby({ rows, selected, width, big, small, label, empty }: { rows: Titl
       </Box>
     );
   }
-  const shown = rows.slice(selected, selected + fit);
+  // The shelf scrolls only when the cursor nears its edge; the big poster is
+  // wherever the cursor is, so the posters around it stay put.
+  const [from, to] = windowOf(rows.length, selected, fit);
+  const shown = rows.slice(from, to);
   const row = rows[selected];
-  const more = selected + fit < rows.length;
   return (
     <Box flexDirection="column">
       <Text color={C.mute}>
         {label}
         {"   "}
-        <Text color={selected > 0 ? C.accent : C.rule}>‹ </Text>
+        <Text color={from > 0 ? C.accent : C.rule}>‹ </Text>
         <Text color={C.rule}>{`${selected + 1} of ${rows.length}`}</Text>
-        <Text color={more ? C.accent : C.rule}> ›</Text>
+        <Text color={to < rows.length ? C.accent : C.rule}> ›</Text>
       </Text>
       <Box marginTop={1} flexShrink={0}>
         {shown.map((r, i) => {
-          const size = i === 0 ? big : small;
+          const on = from + i === selected;
+          const size = on ? big : small;
+          const name = clip(r.title.name, size.cols, 2);
           return (
             <Box key={r.title.id + r.note} flexDirection="column" width={size.cols} marginRight={2} flexShrink={0}>
-              {i === 0 ? null : <Box height={big.rows - small.rows} flexShrink={0} />}
-              <Poster url={r.title.poster} size={size} name={i === 0 ? r.title.name : ""} on={i === 0} />
-              {i === 0 ? (
+              {on ? null : <Box height={big.rows - small.rows} flexShrink={0} />}
+              <Poster url={r.title.poster} size={size} name={on ? r.title.name : ""} on={on} />
+              {on ? (
                 <Text color={tintOf(r.title.poster)}>{"▔".repeat(size.cols)}</Text>
               ) : (
                 <>
-                  <Text color={C.mute} wrap="truncate">
-                    {r.title.name}
-                  </Text>
+                  <Text color={C.mute}>{name[0] ?? " "}</Text>
+                  <Text color={C.mute}>{name[1] ?? " "}</Text>
                   <Text color={C.rule} wrap="truncate">
                     {r.title.year ?? ""}
                     {isSeries(r.title) ? " · series" : ""}
@@ -783,10 +839,12 @@ function About({ title, note, width }: { title: Title; note: string; width: numb
             <Text color={C.rule}>{spaced("cast") + "   "}</Text>
             <Text color={C.text}>{d.cast.join(", ") || "-"}</Text>
           </Text>
-          <Box marginTop={1} height={2} overflow="hidden">
-            <Text color={C.text} italic>
-              {d.plot}
-            </Text>
+          <Box marginTop={1} flexDirection="column">
+            {clip(d.plot, box, 2).map((line, i) => (
+              <Text key={i} color={C.text} italic>
+                {line}
+              </Text>
+            ))}
           </Box>
         </>
       ) : (
@@ -821,10 +879,12 @@ function Stage({ poster, big, children }: { poster: string; big: Size; children:
 }
 
 function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { kind: "episodes" }>; selected: number; height: number }) {
-  const seen = new Set(loadHistory().find((w) => w.id === screen.title.id)?.seen ?? []);
+  const last = loadHistory().find((w) => w.id === screen.title.id);
+  const seen = new Set(last?.seen ?? []);
+  // the episode after the last one played, if it is in this season
+  const next = last?.episode && (last.season ?? 1) === screen.season ? last.episode + 1 : 0;
   const [from, to] = windowOf(screen.list.length, selected, Math.max(3, height - 9));
   const ep = screen.list[selected];
-  const facts = ep ? [ep.date, ep.minutes ? `${ep.minutes} min` : null].filter(Boolean) : [];
   return (
     <Box flexDirection="column">
       <Text color={tintOf(screen.title.poster)} bold wrap="truncate">
@@ -851,16 +911,21 @@ function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { k
         {screen.list.slice(from, to).map((e, i) => {
           const on = from + i === selected;
           const tag = sxxeyy(e.season, e.number);
+          const when = [e.date, e.minutes ? `${e.minutes} min` : ""].filter(Boolean).join("   ");
           return (
             <Box key={tag} flexShrink={0}>
               <Pointer on={on} />
-              <Text wrap="truncate">
-                <Text color={C.mute}>{screen.anime ? String(e.number).padStart(3) : tag} </Text>
-                <Text color={seen.has(tag) ? C.good : C.mute}>{seen.has(tag) ? "✓ " : "  "}</Text>
-                <Text color={on ? C.accent : C.text} bold={on}>
-                  {e.name || `Episode ${e.number}`}
+              <Box flexGrow={1} minWidth={0}>
+                <Text wrap="truncate">
+                  <Text color={C.mute}>{screen.anime ? String(e.number).padStart(3) : tag} </Text>
+                  <Text color={seen.has(tag) ? C.good : C.mute}>{seen.has(tag) ? "✓ " : "  "}</Text>
+                  <Text color={on ? C.accent : C.text} bold={on}>
+                    {e.name || `Episode ${e.number}`}
+                  </Text>
+                  {e.number === next ? <Text color={C.good}>{"  ▸ next"}</Text> : null}
                 </Text>
-              </Text>
+              </Box>
+              <Text color={C.rule}>{when ? "  " + when : ""}</Text>
             </Box>
           );
         })}
@@ -869,17 +934,14 @@ function EpisodeList({ screen, selected, height }: { screen: Extract<Screen, { k
       </Box>
       {ep ? (
         <Box marginTop={1} flexDirection="column" flexShrink={0}>
-          <Text wrap="truncate">
-            <Text color={C.text} bold>
-              {ep.name || `Episode ${ep.number}`}
-            </Text>
-            <Text color={C.mute}>{facts.length ? "   " + facts.join(" · ") : ""}</Text>
+          <Text color={C.text} bold wrap="truncate">
+            {ep.name || `Episode ${ep.number}`}
           </Text>
-          <Box height={3} overflow="hidden">
-            <Text color={C.mute} italic>
-              {ep.plot}
+          {clip(ep.plot, 64, 3).map((line, i) => (
+            <Text key={i} color={C.mute} italic>
+              {line}
             </Text>
-          </Box>
+          ))}
         </Box>
       ) : null}
     </Box>
@@ -922,7 +984,6 @@ function SourceList({
   const asking = !report || report.sites.some((s) => s.state === "asking");
   const [from, to] = windowOf(entries.length, selected, Math.max(3, height - 10));
   const t = picked && "torrent" in picked ? picked.torrent : null;
-  const q = t ? parseQuality(t.name) : null;
   const audio = t ? audioLabel(t.name) : "";
   return (
     <Box flexDirection="column">
@@ -971,24 +1032,25 @@ function SourceList({
       </Box>
       <Scrollbar total={entries.length} from={from} visible={to - from} height={to - from} />
       </Box>
-      {t && q ? (
+      {t ? (
         <Box marginTop={1} flexDirection="column" flexShrink={0}>
           <Text color={C.text} wrap="truncate">
             {t.name}
           </Text>
           <Text wrap="truncate">
-            <Text color={C.mute}>{[q.res, q.hdr, q.codec, q.src].filter(Boolean).join(" · ") || "quality not in the name"}</Text>
-            <Text color={C.mute}>{audio ? `  ·  audio ${audio}` : ""}</Text>
+            <Text color={C.mute}>{audio ? `audio ${audio}` : "audio not in the name"}</Text>
+            {couch ? null : whyNotCouch(t.name) === null ? (
+              <Text color={C.good}>{"  ·  ✓ couch"}</Text>
+            ) : (
+              <Text color={C.rule}>{`  ·  ✗ couch: ${whyNotCouch(t.name)}`}</Text>
+            )}
           </Text>
-          <Text wrap="truncate">
-            {picked && "pick" in picked && picked.pick ? (
-              <>
-                <Badge text="PICK" color={C.accent} />
-                <Text color={C.mute}> 1080p x264 under 6 GB, the most seeders   </Text>
-              </>
-            ) : null}
-            {couch ? null : whyNotCouch(t.name) === null ? <Text color={C.good}>✓ works in flick couch</Text> : <Text color={C.rule}>not for flick couch: {whyNotCouch(t.name)}</Text>}
-          </Text>
+          {picked && "pick" in picked && picked.pick ? (
+            <Text wrap="truncate">
+              <Badge text="PICK" color={C.accent} />
+              <Text color={C.mute}> 1080p x264 under 6 GB, the most seeders</Text>
+            </Text>
+          ) : null}
         </Box>
       ) : null}
     </Box>
@@ -998,55 +1060,103 @@ function SourceList({
 function Playing({ screen, couch, upload, barWidth }: { screen: Extract<Screen, { kind: "playing" }>; couch?: Couch; upload: number | null; barWidth: number }) {
   const d = useDetails(screen.title?.id ?? null);
   const p = screen.progress;
+  const t = screen.torrent;
+  const q = parseQuality(t.name);
+  const tag = sourceTag(t.source);
+  const audio = audioLabel(t.name);
   return (
-    <Box flexShrink={0}>
-      <Box flexDirection="column" flexGrow={1}>
-        <Text color={tintOf(screen.title?.poster ?? "")} bold>
-          {screen.label.toUpperCase()}
+    <Box flexDirection="column" flexShrink={0}>
+      <Text color={tintOf(screen.title?.poster ?? "")} bold>
+        {screen.label.toUpperCase()}
+      </Text>
+      {screen.error ? (
+        <Text color={C.bad}>✗ {screen.error}</Text>
+      ) : (
+        <Text color={C.text}>
+          {p ? <Text color={C.good}>●</Text> : <Spinner />} {screen.status}
         </Text>
-        {screen.error ? (
-          <Text color={C.bad}>✗ {screen.error}</Text>
-        ) : (
-          <Text color={C.text}>
-            {p ? <Text color={C.good}>●</Text> : <Spinner />} {screen.status}
+      )}
+      {p ? (
+        <Box flexDirection="column" marginTop={1}>
+          <FilmStrip percent={p.percent} width={Math.max(12, barWidth)} rolling={p.percent < 100 && p.downBytesPerSec > 0} />
+          <Text color={C.mute} wrap="truncate">
+            {downloadLine(p, t.bytes)}
           </Text>
-        )}
-        {p ? (
-          <Box flexDirection="column" marginTop={1}>
-            <FilmStrip percent={p.percent} width={Math.max(12, barWidth)} rolling={p.percent < 100} />
-            <Text color={C.mute}>
-              <Text color={C.text}>{p.percent >= 100 ? "on disk" : `${p.percent}%`}</Text>
-              {" · "}
-              {p.percent < 100 ? `${humanSize(p.downBytesPerSec)}/s · ` : ""}
-              {p.peers} {p.peers === 1 ? "peer" : "peers"}
-            </Text>
-          </Box>
+        </Box>
+      ) : null}
+      <Box marginTop={1} flexDirection="column">
+        <Text color={C.mute} wrap="truncate">
+          {t.name}
+        </Text>
+        {q.res || q.codec || q.src || audio ? (
+          <Text wrap="truncate">
+            {q.res ? <Badge text={resolutionLabel(q.res)} color={RES_COLOR[q.res] ?? C.rule} /> : null}
+            <Text color={C.mute}>{` ${[q.codec, q.src].filter(Boolean).join(" ")}${audio ? ` · audio ${audio}` : ""}`}</Text>
+            {t.source !== "pasted" ? <Text color={SOURCE_COLOR[tag] ?? C.mute}>{` · ${tag}`}</Text> : null}
+          </Text>
         ) : null}
-        {couch && !screen.error ? <RoomCard couch={couch} torrent={screen.torrent} minutes={d?.minutes ?? 0} upload={upload} /> : null}
       </Box>
+      {couch && !screen.error ? (
+        <RoomCard couch={couch} torrent={t} minutes={d?.minutes ?? 0} upload={upload} />
+      ) : d ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text color={C.mute} wrap="truncate">
+            {[screen.title?.year, d.minutes ? `${d.minutes} min` : null, d.genres.join(", ")].filter(Boolean).join(" · ")}
+          </Text>
+          {d.directors.length ? (
+            <Text wrap="truncate">
+              <Text color={C.rule}>{spaced("director") + "   "}</Text>
+              <Text color={C.text}>{d.directors.join(", ")}</Text>
+            </Text>
+          ) : null}
+          {d.cast.length ? (
+            <Text wrap="truncate">
+              <Text color={C.rule}>{spaced("cast") + "   "}</Text>
+              <Text color={C.text}>{d.cast.join(", ")}</Text>
+            </Text>
+          ) : null}
+          <Box marginTop={1} flexDirection="column">
+            {clip(d.plot, Math.max(30, barWidth + 10), 3).map((line, i) => (
+              <Text key={i} color={C.text} italic>
+                {line}
+              </Text>
+            ))}
+          </Box>
+        </Box>
+      ) : null}
     </Box>
   );
 }
 
-/** couch: who's there, where the room is, and whether this computer's upload
- *  keeps up with the film. */
+/** "23% · 1.0 of 4.4 GB · 3.1 MB/s · 41 peers · about 18 min to the end". Pure. */
+export function downloadLine(p: Progress, totalBytes: number): string {
+  const peers = `${p.peers} ${p.peers === 1 ? "peer" : "peers"}`;
+  if (p.percent >= 100) return `on disk · ${peers}`;
+  const parts = [`${p.percent}%`];
+  if (totalBytes) parts.push(`${humanSize((totalBytes * p.percent) / 100)} of ${humanSize(totalBytes)}`);
+  parts.push(`${humanSize(p.downBytesPerSec)}/s`, peers);
+  if (totalBytes && p.downBytesPerSec > 0) {
+    const minutes = Math.max(1, Math.round((totalBytes * (1 - p.percent / 100)) / p.downBytesPerSec / 60));
+    parts.push(`about ${minutes} min to the end`);
+  }
+  return parts.join(" · ");
+}
+
+/** couch: who's there and since when, where the room is in the film, and
+ *  whether this computer's upload keeps up. The link, once. */
 function RoomCard({ couch, torrent, minutes, upload }: { couch: Couch; torrent: Torrent; minutes: number; upload: number | null }) {
-  const people = couch.room.people();
+  const seated = couch.room.seated();
   const s = couch.room.state;
   const at = clock(currentTime(s));
+  const length = minutes ? `  of ${clock(minutes * 60)}` : "";
   const last = couch.room.lastChange;
-  const position = !s.src
-    ? "waiting for the film…"
-    : s.playing
-      ? `▶ ${at}`
-      : `❚❚ ${last?.action === "pause" ? `paused by ${last.by} at` : "paused at"} ${at}`;
 
   // The film's bitrate times the people watching (the host streams from the
   // room too) is what the upload has to keep up with.
   const bitrate = torrent.bytes && minutes ? torrent.bytes / (minutes * 60) : 0;
-  const need = bitrate * people.length;
+  const need = bitrate * seated.length;
   let health = <Text color={C.mute}>upload idle</Text>;
-  if (s.playing && people.length && upload !== null) {
+  if (s.playing && seated.length && upload !== null) {
     const ok = !need || upload >= need * 0.9;
     health = (
       <Text color={ok ? C.good : C.warn}>
@@ -1057,8 +1167,35 @@ function RoomCard({ couch, torrent, minutes, upload }: { couch: Couch; torrent: 
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Text color={C.text}>{people.length ? `in the room: ${people.join(", ")}` : "nobody in the room yet"}</Text>
-      <Text color={s.playing ? C.accent : C.text}>{position}</Text>
+      <Text color={C.bulb} bold>
+        {spaced("the room")}
+      </Text>
+      <Text wrap="truncate">
+        {seated.length ? (
+          seated.map((seat, i) => (
+            <Text key={seat.id + i}>
+              {i ? "     " : ""}
+              <Text color={C.text}>{seat.name}</Text>
+              <Text color={C.rule}>{` ${sinceLabel(Date.now() - seat.since)}`}</Text>
+            </Text>
+          ))
+        ) : (
+          <Text color={C.mute}>nobody yet: send the link below</Text>
+        )}
+      </Text>
+      <Text>
+        {!s.src ? (
+          <Text color={C.mute}>waiting for the film…</Text>
+        ) : s.playing ? (
+          <Text color={C.accent}>▶ {at}</Text>
+        ) : (
+          <Text color={C.text}>
+            ❚❚ {at}
+            <Text color={C.mute}>{last?.action === "pause" ? `  paused by ${last.by}` : ""}</Text>
+          </Text>
+        )}
+        <Text color={C.mute}>{s.src ? length : ""}</Text>
+      </Text>
       {health}
       {couch.link ? (
         <Box marginTop={1}>
@@ -1067,6 +1204,15 @@ function RoomCard({ couch, torrent, minutes, upload }: { couch: Couch; torrent: 
       ) : null}
     </Box>
   );
+}
+
+/** How long someone has been in the room: "just joined", "here 4 min",
+ *  "here 1 h 20 min". Pure. */
+export function sinceLabel(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "just joined";
+  if (minutes < 60) return `here ${minutes} min`;
+  return `here ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 }
 
 function Help() {

@@ -32,14 +32,20 @@ export function mix(from: string, to: string, t: number): string {
   return out;
 }
 
-/** A number that goes up every `ms` while `on`, for small animations. */
-function useTick(ms: number, on: boolean): number {
+/** A number that goes up every `ms` while `on`, for small animations. With
+ *  `limit`, it stops there: an animation that plays a few times and rests. */
+function useTick(ms: number, on: boolean, limit = Infinity): number {
   const [tick, setTick] = useState(0);
   useEffect(() => {
     if (!on) return;
-    const timer = setInterval(() => setTick((n) => n + 1), ms);
+    let count = 0;
+    const timer = setInterval(() => {
+      count++;
+      setTick((n) => n + 1);
+      if (count >= limit) clearInterval(timer);
+    }, ms);
     return () => clearInterval(timer);
-  }, [ms, on]);
+  }, [ms, on, limit]);
   return tick;
 }
 
@@ -62,7 +68,7 @@ export function bulbPath(width: number): [number, number][] {
 /** The flick sign: the word inside a frame of bulbs. With `chase`, every third
  *  bulb is lit and the lit ones run around the frame. */
 export function Marquee({ chase = false }: { chase?: boolean }) {
-  const tick = useTick(350, chase);
+  const tick = useTick(350, chase, 9); // three runs round the sign, then it rests
   const lit = new Map<string, boolean>();
   bulbPath(MARQUEE_WIDTH).forEach(([row, col], i) => lit.set(`${row},${col}`, (i + (chase ? tick : 0)) % 3 === 0));
 
@@ -102,10 +108,10 @@ export function Marquee({ chase = false }: { chase?: boolean }) {
 // ---------- the film strip ----------
 
 /** A download shown as a strip of film: one frame per 3 columns, frames filling
- *  in as the film arrives, sprocket holes above and below that roll while it
- *  downloads. */
+ *  in as the film arrives, sprocket holes above and below that roll while data
+ *  is actually arriving (a stalled download stops rolling). */
 export function FilmStrip({ percent, width, rolling }: { percent: number; width: number; rolling: boolean }) {
-  const tick = useTick(150, rolling);
+  const tick = useTick(400, rolling);
   const frames = Math.max(4, Math.floor(width / 3));
   const filled = Math.round((Math.max(0, Math.min(100, percent)) / 100) * frames);
   const shift = rolling ? tick % 3 : 0;

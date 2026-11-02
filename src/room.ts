@@ -25,7 +25,7 @@ export type RoomState = {
   last: { title: string; finished: number } | null;
 };
 
-export type Seat = { id: string; name: string };
+export type Seat = { id: string; name: string; since: number }; // since: when they sat down, ms
 
 // Each room remembers its last film and ratings in its own file.
 const ROOMS_DIR = join(CONFIG_DIR, "rooms");
@@ -118,6 +118,11 @@ export class Room {
     return [...this.seats.values()].map((s) => s.name);
   }
 
+  /** Everyone in the room with when they sat down, for the TUI's room card. */
+  seated(): Seat[] {
+    return [...this.seats.values()];
+  }
+
   // ---------- what's on ----------
 
   /** Put a film on: a new film starts from the top; the same film again (the
@@ -178,7 +183,7 @@ export class Room {
     const s = this.state;
 
     if (msg.type === "hello") {
-      const seat = { id: String(msg.id || "").slice(0, 64), name: String(msg.name || "").trim().slice(0, 24) || "Someone" };
+      const seat = { id: String(msg.id || "").slice(0, 64), name: String(msg.name || "").trim().slice(0, 24) || "Someone", since: Date.now() };
       this.seats.set(ws, seat);
       ws.send(JSON.stringify(this.stateMessage("join", seat)));
       this.broadcast({ type: "peers", peers: [...this.seats.values()] });

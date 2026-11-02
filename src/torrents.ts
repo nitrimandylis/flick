@@ -90,12 +90,12 @@ export function browserPlayable(name: string): boolean {
  *  Browsers play MP4 with H.264 video; a release that doesn't say MP4 is
  *  almost always an MKV, usually with AC3 or DTS sound, which they can't. Pure. */
 export function whyNotCouch(name: string): string | null {
-  if (/\b(x265|h\.?\s?265|hevc)\b/i.test(name)) return "HEVC video, which browsers can't play";
-  if (/\b10.?bit\b/i.test(name)) return "10-bit video, which browsers can't play";
-  if (/\bav1\b/i.test(name)) return "AV1 video, which not every browser plays";
+  if (/\b(x265|h\.?\s?265|hevc)\b/i.test(name)) return "HEVC video";
+  if (/\b10.?bit\b/i.test(name)) return "10-bit video";
+  if (/\bav1\b/i.test(name)) return "AV1 video";
   if (/\b(yts|yify)\b/i.test(name)) return null;
-  if (!/\b(x264|h\.?\s?264|avc)\b/i.test(name)) return "the name doesn't say H.264";
-  if (!/\bmp4\b/i.test(name)) return "not an MP4 (most likely MKV), which browsers can't play";
+  if (!/\b(x264|h\.?\s?264|avc)\b/i.test(name)) return "no H.264 in the name";
+  if (!/\bmp4\b/i.test(name)) return "most likely MKV, browsers need MP4";
   return null;
 }
 

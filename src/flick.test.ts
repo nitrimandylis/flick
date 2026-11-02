@@ -6,7 +6,7 @@ import { playerPage } from "./players.ts";
 import { parseYifyEnglish, srtToVtt } from "./subtitles.ts";
 import { parseDetails, parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
 import { audioLabel, browserPlayable, hashOf, matchesShow, pickBest, qualityLabel, withTrackers, type Torrent } from "./torrents.ts";
-import { clock, continueRows, resolutionLabel, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
+import { clip, clock, continueRows, downloadLine, resolutionLabel, sinceLabel, trail, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
 import { bulbPath, mix, spaced, thumbRows } from "./look.tsx";
 import { placeholderLines, tintFrom } from "./poster.ts";
 import { trimCache } from "./store.ts";
@@ -275,4 +275,32 @@ test("couch says why a release won't play in a browser", () => {
   expect(whyNotCouch("Dune.2021.2160p.WEB-DL.HEVC")).toContain("HEVC");
   expect(whyNotCouch("Dune: Part One (2021) [1080p web x264] [YTS]")).toBeNull();
   expect(whyNotCouch("Film.2020.1080p.WEB.x264.mp4")).toBeNull();
+});
+
+describe("review fixes", () => {
+  test("clip wraps by word and ends a cut line with an ellipsis", () => {
+    expect(clip("Dune: Part Three", 12, 2)).toEqual(["Dune: Part", "Three"]);
+    expect(clip("one two three four five six", 9, 2)).toEqual(["one two", "three…"]);
+    expect(clip("short", 20, 3)).toEqual(["short"]);
+  });
+
+  test("the download line says how far and how long", () => {
+    const GB = 1024 ** 3;
+    expect(downloadLine({ percent: 25, downBytesPerSec: 3 * 1024 ** 2, peers: 41 }, 4 * GB)).toBe("25% · 1.0 GB of 4.0 GB · 3.0 MB/s · 41 peers · about 17 min to the end");
+    expect(downloadLine({ percent: 100, downBytesPerSec: 0, peers: 1 }, 4 * GB)).toBe("on disk · 1 peer");
+    expect(downloadLine({ percent: 10, downBytesPerSec: 0, peers: 0 }, 0)).toBe("10% · ? /s · 0 peers".replace("? /s", "?/s"));
+  });
+
+  test("the trail says where you came from", () => {
+    const title = { id: "tt1", name: "Dune", year: 2021, kind: "movie", poster: "", cast: "" };
+    const sources = { kind: "sources", wanted: { kind: "film", title }, label: "Dune (2021)", report: null, hidden: 0 } as any;
+    expect(trail(sources, "dune", "Now showing")).toEqual(["⌕ dune", "Dune (2021)"]);
+    expect(trail(sources, "", "Now showing")).toEqual(["now showing", "Dune (2021)"]);
+  });
+
+  test("time in the room", () => {
+    expect(sinceLabel(20_000)).toBe("just joined");
+    expect(sinceLabel(4 * 60_000)).toBe("here 4 min");
+    expect(sinceLabel(80 * 60_000)).toBe("here 1 h 20 min");
+  });
 });
