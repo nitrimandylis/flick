@@ -31,6 +31,7 @@ import {
   type Torrent,
   type Wanted,
 } from "./torrents.ts";
+import { fetchWatchlist, nextPick, shuffled, type Listed, type Pick } from "./tonight.ts";
 import { watch, type Progress, type Session } from "./watch.ts";
 
 // Resolution badges: 4K warm, 1080p cyan, 720p grey.
@@ -55,20 +56,33 @@ type SourceEntry = Heading | SourceRow;
 
 type Screen =
   | { kind: "browse" }
+  // flick tonight: one film from the watchlist. `pick` is null while it is
+  // being looked for (`loading`) or when nothing fits (`note` says why).
+  | { kind: "tonight"; pick: Pick | null; loading: boolean; note: string }
   | { kind: "episodes"; title: Title; anime: Anime | null; seasons: number[]; season: number; list: Episode[] }
   | { kind: "sources"; wanted: Wanted; label: string; episodeTag?: string; report: SourceReport | null; hidden: number }
   | { kind: "playing"; label: string; title: Title | null; torrent: Torrent; status: string; progress: Progress | null; error: string | null };
 
-export function App(props: { engine: Engine; player: PlayerName; cacheGB: number; dub: boolean; initialQuery: string; couch?: Couch }) {
+export function App(props: {
+  engine: Engine;
+  player: PlayerName;
+  cacheGB: number;
+  dub: boolean;
+  initialQuery: string;
+  couch?: Couch;
+  tonight?: { user: string; minutes: number | null }; // flick tonight: whose watchlist, and the time there is
+}) {
   const { exit } = useApp();
   const { rows: height, columns: width } = useWindowSize();
-  const [splash, setSplash] = useState(!props.initialQuery);
+  const [splash, setSplash] = useState(!props.initialQuery && !props.tonight);
   const [query, setQuery] = useState(props.initialQuery);
   const [section, setSection] = useState<Section>("Continue");
   const [home, setHome] = useState<Record<Section, TitleRow[]>>({ Continue: [], "Now showing": [], Shows: [] });
   const [results, setResults] = useState<TitleRow[]>([]);
   const [selected, setSelected] = useState(0);
-  const [screen, setScreen] = useState<Screen>({ kind: "browse" });
+  const [screen, setScreen] = useState<Screen>(
+    props.tonight ? { kind: "tonight", pick: null, loading: true, note: "reading your watchlist…" } : { kind: "browse" },
+  );
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState<{ text: string; kind: "ok" | "no" } | null>(null); // a short note at the bottom right
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -76,6 +90,8 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   const session = useRef<Session | null>(null);
   const searchId = useRef(0);
   const sourcesId = useRef(0);
+  const tonightId = useRef(0);
+  const tonightQueue = useRef<Listed[] | null>(null); // the shuffled watchlist, shorter after every pick
   const moved = useRef(false); // has the person moved the cursor on this sources list?
   const selectedHash = useRef(""); // the source under the cursor, kept while the list fills in
   const uploads = useRef<[number, number][]>([]); // couch: [time, bytes sent] every 2 s
@@ -142,6 +158,32 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   }, [query]);
 
   const rows = query.trim() ? results : home[section];
+
+  /** flick tonight: show the next film from the watchlist that can play now. */
+  async function rollTonight() {
+    if (!props.tonight) return;
+    const id = ++tonightId.current;
+    const show = (change: { pick: Pick | null; loading: boolean; note: string }) => {
+      if (id === tonightId.current) setScreen({ kind: "tonight", ...change }); // unless they already left
+    };
+    if (!tonightQueue.current) {
+      show({ pick: null, loading: true, note: "reading your watchlist…" });
+      tonightQueue.current = shuffled(await fetchWatchlist(props.tonight.user));
+      if (!tonightQueue.current.length) {
+        tonightQueue.current = null; // so n tries again
+        return show({ pick: null, loading: false, note: `couldn't read a watchlist at letterboxd.com/${props.tonight.user}/watchlist` });
+      }
+    }
+    show({ pick: null, loading: true, note: "finding a film that fits…" });
+    const pick = await nextPick(tonightQueue.current, props.tonight.minutes, Boolean(couch));
+    if (pick) show({ pick, loading: false, note: "" });
+    else show({ pick: null, loading: false, note: "nothing else on your watchlist fits tonight" });
+  }
+
+  // flick tonight: start looking as soon as flick opens.
+  useEffect(() => {
+    if (props.tonight) void rollTonight();
+  }, []);
 
   async function openTitle(title: Title) {
     if (couch && isSeries(title)) {
@@ -285,6 +327,22 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
       return;
     }
 
+    if (screen.kind === "tonight") {
+      const pick = screen.pick;
+      if (key.return && pick) {
+        tonightId.current++;
+        return void startWatching(pick.torrent, pick.title, `${pick.title.name}${pick.title.year ? ` (${pick.title.year})` : ""}`);
+      }
+      if (input === "n" && !screen.loading) return void rollTonight();
+      if (key.escape || input === "q") {
+        tonightId.current++; // a pick still being looked for must not pull us back
+        setSelected(0);
+        return setScreen({ kind: "browse" });
+      }
+      if (input === "?") return setShowHelp(true);
+      return;
+    }
+
     // browse: the poster wall moves with ←→ (and ↑↓ too)
     if (screen.kind === "browse" && (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow)) {
       const step = key.leftArrow || key.upArrow ? -1 : 1;
@@ -412,7 +470,9 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   const hints: Hint[] =
     screen.kind === "browse"
       ? [["←→", "browse"], ["⏎", "sources"], ["tab", "section"], ["type", "search"], ["esc", query ? "clear" : "home"]]
-      : screen.kind === "episodes"
+      : screen.kind === "tonight"
+        ? [["⏎", couch ? "put it on in the room" : "play"], ["n", "another"], ["esc", "browse"]]
+        : screen.kind === "episodes"
         ? [["↑↓", "episode"], ["←→", "season"], ["⏎", "sources"], ["esc", "back"]]
         : screen.kind === "sources"
           ? [["↑↓", "move"], ["⏎", couch ? "put it on in the room" : "play"], ["esc", "back"]]
@@ -426,6 +486,12 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
   } else if (screen.kind === "browse") {
     const label = query.trim() ? (busy ? "searching…" : `${rows.length} results`) : `${rows.length} ${section === "Shows" ? "shows" : section === "Continue" ? "to continue" : "films"}`;
     body = <Lobby rows={rows} selected={selected} width={inner} big={big} small={small} label={label} empty={query.trim() ? "Nothing found." : "Loading…"} />;
+  } else if (screen.kind === "tonight") {
+    body = (
+      <Stage poster={screen.pick?.title.poster ?? ""} big={big}>
+        <Tonight screen={screen} minutes={props.tonight?.minutes ?? null} width={inner - big.cols - 3} />
+      </Stage>
+    );
   } else if (screen.kind === "episodes") {
     body = (
       <Stage poster={screen.title.poster} big={big}>
@@ -521,6 +587,7 @@ export function App(props: { engine: Engine; player: PlayerName; cacheGB: number
  *  or the section), then the title, then the season or episode. Pure. */
 export function trail(screen: Screen, query: string, section: string): string[] {
   const from = query.trim() ? `⌕ ${query.trim()}` : section.toLowerCase();
+  if (screen.kind === "tonight") return screen.pick ? ["tonight", screen.pick.title.name] : ["tonight"];
   if (screen.kind === "episodes") return [from, screen.title.name, screen.anime ? "episodes" : `season ${screen.season}`];
   if (screen.kind === "sources") {
     if (screen.wanted.kind === "film") return [from, screen.label];
@@ -857,6 +924,36 @@ function About({ title, note, width }: { title: Title; note: string; width: numb
           </Box>
         </>
       )}
+    </Box>
+  );
+}
+
+/** flick tonight: the one film on offer, with the source that will play, or
+ *  what flick is doing while it looks for one. */
+function Tonight({ screen, minutes, width }: { screen: Extract<Screen, { kind: "tonight" }>; minutes: number | null; width: number }) {
+  if (!screen.pick) {
+    return (
+      <Box marginTop={1}>
+        {screen.loading ? (
+          <>
+            <Spinner />
+            <Text> </Text>
+          </>
+        ) : null}
+        <Text color={screen.loading ? C.mute : C.warn}>{screen.note}</Text>
+      </Box>
+    );
+  }
+  const { title, torrent } = screen.pick;
+  const q = parseQuality(torrent.name);
+  return (
+    <Box flexDirection="column">
+      <Text color={C.bulb}>{minutes ? `from your watchlist, fits in ${minutes} min` : "from your watchlist"}</Text>
+      <About title={title} note="" width={width} />
+      <Box marginTop={1}>
+        <Badge text={resolutionLabel(q.res)} color={RES_COLOR[q.res] ?? C.mute} />
+        <Text color={C.mute}>{`  ${humanSize(torrent.bytes)} · ${torrent.seeders} seeders · ${sourceTag(torrent.source)}`}</Text>
+      </Box>
     </Box>
   );
 }
@@ -1222,6 +1319,7 @@ function Help() {
     ["↑ ↓", "move"],
     ["tab", "the programme: continue, now showing, shows"],
     ["← →", "change season"],
+    ["n", "flick tonight: another film from your watchlist"],
     ["c", "couch: copy the room link while a film is on"],
     ["esc", "back, clear the search, or home"],
     ["paste", "a magnet link or info hash plays it straight away"],

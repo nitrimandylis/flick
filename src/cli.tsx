@@ -20,6 +20,9 @@ usage:
   flick <title>             open flick already searching for <title>
   flick couch [title]       watch together: films play in a room in both your
                             browsers, in sync; flick prints the room's link
+  flick tonight [minutes]   one film from your Letterboxd watchlist that fits in
+                            <minutes> (any length if left out): enter plays it,
+                            n picks another. Also: flick couch tonight [minutes]
 
 options:
   --engine rqbit|webtorrent   torrent engine (default: rqbit if installed, else webtorrent)
@@ -29,14 +32,23 @@ options:
   -h, --help                  this help
   -v, --version               the version
 
-Settings live in ~/.config/flick/config.json (engine, player, cacheGB, dub).
+Settings live in ~/.config/flick/config.json (engine, player, cacheGB, dub,
+and letterboxd: your Letterboxd username, for flick tonight).
 couch rooms run on this computer through a free Cloudflare quick tunnel (a new
 address each time). For one fixed address, create a named Cloudflare tunnel
 routed to http://127.0.0.1:8765 and set tunnelToken and tunnelHost there.
 Films are cached in ~/.cache/flick, capped at 10 GB by default; the least
 recently watched go first. Nothing keeps uploading once a film is closed.`;
 
-type Args = { query: string; engine?: string; player?: string; dub: boolean; couch: boolean };
+type Args = {
+  query: string;
+  engine?: string;
+  player?: string;
+  dub: boolean;
+  couch: boolean;
+  tonight?: boolean; // flick tonight: pick a film from the watchlist
+  minutes?: number; // flick tonight 100: only films this long or shorter
+};
 
 /** Command-line arguments into options. Unknown flags are an error. Pure. */
 export function parseArgs(argv: string[]): Args | { error: string } | "help" | "version" {
@@ -58,6 +70,14 @@ export function parseArgs(argv: string[]): Args | { error: string } | "help" | "
   if (words[0] === "couch") {
     args.couch = true;
     words.shift();
+  }
+  if (words[0] === "tonight") {
+    args.tonight = true;
+    words.shift();
+    if (words.length > 1 || (words.length === 1 && !/^[1-9]\d*$/.test(words[0]))) {
+      return { error: "tonight takes a number of minutes, like: flick tonight 110" };
+    }
+    if (words.length === 1) args.minutes = Number(words.shift());
   }
   args.query = words.join(" ");
   return args;
@@ -91,6 +111,11 @@ function main() {
     process.exitCode = 1;
     return;
   }
+  if (parsed.tonight && !config.letterboxd) {
+    console.error('flick tonight reads your Letterboxd watchlist: add "letterboxd": "<your username>" to ~/.config/flick/config.json');
+    process.exitCode = 1;
+    return;
+  }
   if (!process.stdin.isTTY) {
     console.error("flick needs an interactive terminal");
     process.exitCode = 1;
@@ -117,6 +142,7 @@ function main() {
       dub={parsed.dub || Boolean(config.dub)}
       initialQuery={parsed.query}
       couch={couch}
+      tonight={parsed.tonight && config.letterboxd ? { user: config.letterboxd, minutes: parsed.minutes ?? null } : undefined}
     />,
     { alternateScreen: true, exitOnCtrlC: false },
   );

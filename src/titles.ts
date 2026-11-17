@@ -74,26 +74,45 @@ async function graphql(query: string): Promise<any> {
   }
 }
 
+// The fields of a title that IMDb's GraphQL is asked for, and how they become a Title.
+const TITLE_FIELDS = "id titleText { text } releaseYear { year } titleType { id } primaryImage { url }";
+
+function titleFrom(t: any): Title {
+  return {
+    id: t.id,
+    name: t.titleText?.text ?? "",
+    year: t.releaseYear?.year ?? null,
+    kind: t.titleType?.id ?? "",
+    poster: t.primaryImage?.url ?? "",
+    cast: "",
+  };
+}
+
 /** Titles from an IMDb popularity search (the "trending" list). Pure. */
 export function parseTrending(json: any): Title[] {
   const edges = json?.data?.advancedTitleSearch?.edges ?? [];
   return edges
     .map((e: any) => e.node?.title)
     .filter((t: any) => typeof t?.id === "string" && t.id.startsWith("tt"))
-    .map((t: any) => ({
-      id: t.id,
-      name: t.titleText?.text ?? "",
-      year: t.releaseYear?.year ?? null,
-      kind: t.titleType?.id ?? "",
-      poster: t.primaryImage?.url ?? "",
-      cast: "",
-    }));
+    .map(titleFrom);
+}
+
+/** One title from IMDb's answer to a lookup by id, or null. Pure. */
+export function parseTitle(json: any): Title | null {
+  const t = json?.data?.title;
+  return typeof t?.id === "string" && t.id.startsWith("tt") ? titleFrom(t) : null;
+}
+
+/** The title with this IMDb id ("tt0137523"), or null. */
+export async function titleById(id: string): Promise<Title | null> {
+  if (!/^tt\d+$/.test(id)) return null;
+  return parseTitle(await graphql(`query { title(id: "${id}") { ${TITLE_FIELDS} } }`));
 }
 
 /** The most popular films or shows right now, by IMDb's daily popularity. */
 export async function trending(kind: "movie" | "tvSeries"): Promise<Title[]> {
   const json = await graphql(
-    `query { advancedTitleSearch(first: 20, sort: {sortBy: POPULARITY, sortOrder: ASC}, constraints: {titleTypeConstraint: {anyTitleTypeIds: ["${kind}"]}}) { edges { node { title { id titleText { text } releaseYear { year } titleType { id } primaryImage { url } } } } } }`,
+    `query { advancedTitleSearch(first: 20, sort: {sortBy: POPULARITY, sortOrder: ASC}, constraints: {titleTypeConstraint: {anyTitleTypeIds: ["${kind}"]}}) { edges { node { title { ${TITLE_FIELDS} } } } } }`,
   );
   return parseTrending(json);
 }

@@ -49,6 +49,7 @@ nick@flick:~$ flick couch
 | 06 | **pluggable** | engine rqbit or the built-in webtorrent, player IINA, mpv, VLC or the browser |
 | 07 | **cache with a cap** | 10 GB by default, least recently watched goes first, nothing seeds after a film closes |
 | 08 | **no ratings** | on purpose. you are about to watch it anyway |
+| 09 | **tonight** | `flick tonight 110` shows one film from your Letterboxd watchlist that fits in 110 minutes. enter plays it, `n` asks for another |
 
 ## 🚀 Run it
 
@@ -59,12 +60,17 @@ npx @nitrimandylis/flick              # run once, nothing installed
 npm i -g @nitrimandylis/flick         # or: bun add -g @nitrimandylis/flick
 flick
 flick couch
+flick tonight 110                     # one film from your Letterboxd watchlist, 110 minutes or less
 man flick
 ```
 
 `bun add -g` skips install scripts, so the built-in engine's native parts are missing there: that is fine with rqbit installed, otherwise run `bun pm -g trust --all` once.
 
 Type a title, press enter twice, and the film is playing. The second enter is the one you will regret at 2 am.
+
+### Tonight
+
+`flick tonight` is for the evenings when choosing takes longer than the film. Put your Letterboxd username in `~/.config/flick/config.json` as `letterboxd` (the watchlist has to be public), then `flick tonight` shows one film from it, with a source already picked. `flick tonight 110` keeps to films of 110 minutes or less, and `flick couch tonight` does the same for a room. Films that are not out yet, or that have no 1080p source to just play, are passed over.
 
 ### Couch on a fixed address
 

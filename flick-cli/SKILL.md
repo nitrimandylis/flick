@@ -18,7 +18,7 @@ problems around it.
 - Optional, better: `brew install rqbit` (faster engine; otherwise the built-in
   webtorrent is used) and IINA or mpv as the player (otherwise the browser).
 - Settings: `~/.config/flick/config.json` with `engine`, `player`, `cacheGB`,
-  `dub`, and for couch `room`, `tunnelToken`, `tunnelHost`. **`tunnelToken` is
+  `dub`, `letterboxd`, and for couch `room`, `tunnelToken`, `tunnelHost`. **`tunnelToken` is
   a secret: never read, print or write it.** Tell the user the key name and
   let them set it.
 
@@ -29,6 +29,7 @@ problems around it.
 | Browse and search | `flick` |
 | Jump to a title | `flick dune` |
 | Watch together | `flick couch` or `flick couch dune` |
+| Can't decide | `flick tonight` or `flick tonight 110` (one film from their Letterboxd watchlist, 110 minutes or less; needs `letterboxd` set to their username in the config, and a public watchlist) |
 | Pick the engine or player | `--engine rqbit\|webtorrent`, `--player iina\|mpv\|vlc\|browser` |
 | Anime with dual audio | `--dub` |
 

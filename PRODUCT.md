@@ -19,6 +19,11 @@ someone far away, in sync, without screen sharing.
   then grouped by resolution. Results stream in as each site answers, with
   a status per site.
 - **No ratings anywhere**, on purpose: the film gets judged fresh.
+- **Tonight:** `flick tonight [minutes]` shows one film from a public
+  Letterboxd watchlist (`letterboxd` in the config) that fits the time given,
+  with the pick's source ready: enter plays, `n` rerolls. It exists to remove
+  the choosing, the "no time" and the effort of starting. The film is matched
+  by the IMDb id on its Letterboxd page, never by name.
 - **Pluggable:** engine rqbit if installed, else webtorrent (built in).
   Player IINA, then mpv, then VLC, then the browser. Series play solo.
 - **Cache:** 10 GB cap, least recently watched evicted. Nothing seeds after

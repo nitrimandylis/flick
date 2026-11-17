@@ -4,13 +4,14 @@ import { pickSubtitles, pickVideos } from "./engines.ts";
 import { parseArgs } from "./cli.tsx";
 import { playerPage } from "./players.ts";
 import { parseYifyEnglish, srtToVtt } from "./subtitles.ts";
-import { parseDetails, parseEpisodes, parseSuggestions, sxxeyy } from "./titles.ts";
+import { parseDetails, parseEpisodes, parseSuggestions, parseTitle, sxxeyy } from "./titles.ts";
 import { audioLabel, browserPlayable, hashOf, matchesShow, pickBest, qualityLabel, withTrackers, type Torrent } from "./torrents.ts";
 import { clip, clock, continueRows, downloadLine, resolutionLabel, sinceLabel, trail, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
 import { bulbPath, mix, spaced, thumbRows } from "./look.tsx";
 import { placeholderLines, tintFrom } from "./poster.ts";
 import { trimCache } from "./store.ts";
 import { applySet, crossedToggle, currentTime, emptyState } from "./room.ts";
+import { fits, parseImdbId, parseWatchlist, shuffled } from "./tonight.ts";
 import { mkdirSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -302,5 +303,40 @@ describe("review fixes", () => {
     expect(sinceLabel(20_000)).toBe("just joined");
     expect(sinceLabel(4 * 60_000)).toBe("here 4 min");
     expect(sinceLabel(80 * 60_000)).toBe("here 1 h 20 min");
+  });
+});
+
+describe("tonight", () => {
+  test("a watchlist page gives names, years and slugs", () => {
+    const html =
+      '<div class="x" data-item-name="Molly&#039;s Game (2017)" data-item-slug="mollys-game"></div>' +
+      '<div data-item-slug="m" data-item-name="M (1931)"></div>' +
+      '<div data-item-name="Untitled" data-item-slug="untitled"></div>';
+    expect(parseWatchlist(html)).toEqual([
+      { name: "Molly's Game", year: 2017, slug: "mollys-game" },
+      { name: "M", year: 1931, slug: "m" },
+      { name: "Untitled", year: null, slug: "untitled" },
+    ]);
+  });
+  test("a film page gives the IMDb id, and IMDb gives the title back", () => {
+    expect(parseImdbId('<a href="http://www.imdb.com/title/tt0022100/maindetails">IMDb</a>')).toBe("tt0022100");
+    expect(parseImdbId("<p>no link</p>")).toBeNull();
+    const json = { data: { title: { id: "tt0022100", titleText: { text: "M" }, releaseYear: { year: 1931 }, titleType: { id: "movie" } } } };
+    expect(parseTitle(json)).toEqual({ id: "tt0022100", name: "M", year: 1931, kind: "movie", poster: "", cast: "" });
+    expect(parseTitle({ data: { title: null } })).toBeNull();
+  });
+  test("the time limit", () => {
+    expect(fits(95, 100)).toBe(true);
+    expect(fits(101, 100)).toBe(false);
+    expect(fits(0, 100)).toBe(false); // unknown length
+    expect(fits(0, null)).toBe(true);
+  });
+  test("shuffling keeps every film", () => {
+    expect(shuffled([1, 2, 3, 4], () => 0).sort()).toEqual([1, 2, 3, 4]);
+  });
+  test("tonight's arguments", () => {
+    expect(parseArgs(["tonight"])).toEqual({ query: "", dub: false, couch: false, tonight: true });
+    expect(parseArgs(["couch", "tonight", "110"])).toEqual({ query: "", dub: false, couch: true, tonight: true, minutes: 110 });
+    expect(parseArgs(["tonight", "soon"])).toEqual({ error: "tonight takes a number of minutes, like: flick tonight 110" });
   });
 });
