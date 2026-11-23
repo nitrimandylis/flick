@@ -10,6 +10,7 @@ const DRIFT_LIMIT = 3; // seconds apart before the pill turns magenta
 const CURTAIN_CAP = 10000; // ms before the loading curtain gives up and lifts
 const SEEK_LEAD = 1.5; // seconds: a jump while playing re-buffers through the tunnel, so land ahead
 const FOLLOW_SLACK = 2; // seconds a playing film may differ from the room before we seek
+const CATCH_UP_MAX = 15; // seconds: under this, a drifted player catches up by speed, not by seeking
 
 const roomId = location.pathname.split("/")[2];
 const $ = (id) => document.getElementById(id);
@@ -272,8 +273,16 @@ setInterval(() => {
   // Right after our own seek the room hasn't heard about it yet, and its clock
   // still shows the old spot. Don't drag the person back to it.
   if (Date.now() - lastLocalAction < 3000) return;
+  // Still loading data: we fall behind while we wait, and seeking now would
+  // throw away what is arriving and start a new request through the tunnel,
+  // which stalls again. That loop stopped one seat every few seconds.
+  if (video.readyState < 3) return;
   const behind = roomTime() - video.currentTime;
-  if (Math.abs(behind) > FOLLOW_SLACK) follow();
+  // A few seconds off: catch up by speed. The film keeps reading the same
+  // stretch of file, so nothing has to reload.
+  if (Math.abs(behind) > CATCH_UP_MAX) follow();
+  else if (behind > FOLLOW_SLACK) video.playbackRate = 1.5;
+  else if (behind < -FOLLOW_SLACK) video.playbackRate = 0.75;
   else if (behind > 0.3) video.playbackRate = 1.05;
   else if (behind < -0.3) video.playbackRate = 0.95;
   else video.playbackRate = 1;
