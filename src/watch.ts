@@ -49,7 +49,7 @@ export async function watch(options: {
   touchFilm(stream.folder);
   trimCache(options.cacheGB, stream.folder);
 
-  onStatus(`playing in ${options.player}${subs ? ", English subtitles on" : ""}`);
+  onStatus(`playing in ${options.player}${subs ? ", English subtitles on" : ", no English subtitles found"}`);
   const playing = play(options.player, { url: stream.urlOf(video), title: options.name, subtitle: subs?.path ?? null, vtt: subs?.vtt ?? null });
 
   const timer = setInterval(async () => options.onProgress(await stream.progress()), 2000);

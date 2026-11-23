@@ -81,7 +81,7 @@ export class Couch {
     touchFilm(stream.folder);
     trimCache(loadConfig().cacheGB ?? 10, stream.folder);
     this.room.setFilm({ id: title.id, title: title.name, year: title.year ?? undefined }, stream.urlOf(video), subs?.vtt ?? null);
-    onStatus(`on in the room${subs ? ", English subtitles available" : ""}`);
+    onStatus(`on in the room${subs ? ", English subtitles available" : ", no English subtitles found"}`);
   }
 
   async progress() {

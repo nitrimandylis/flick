@@ -31,6 +31,13 @@ export function parseYifyEnglish(html: string): string | null {
   return null;
 }
 
+/** The .zip link on a yifysubtitles subtitle page. Its name can differ from
+ *  the page's ("dune-part-one-2021-..." page, "dune-2021-..." zip). Pure. */
+export function parseYifyZip(html: string): string | null {
+  const link = html.match(/href="(\/subtitle\/[^"]+\.zip)"/);
+  return link ? link[1] : null;
+}
+
 /** Download (once) an English .srt for an IMDb id. Returns its path, or null. */
 async function fromYify(imdbId: string): Promise<string | null> {
   const srt = join(SUBS_DIR, `${imdbId}.srt`);
@@ -43,9 +50,14 @@ async function fromYify(imdbId: string): Promise<string | null> {
     if (!page.ok) return null;
     const slug = parseYifyEnglish(await page.text());
     if (!slug) return null;
+    const subPage = `${YIFY}/subtitles/${slug}`;
+    const detail = await fetch(subPage, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(15_000) });
+    if (!detail.ok) return null;
+    const zipLink = parseYifyZip(await detail.text());
+    if (!zipLink) return null;
     // the download refuses requests that don't come from the subtitle's page
-    const zip = await fetch(`${YIFY}/subtitle/${slug}.zip`, {
-      headers: { "User-Agent": UA, Referer: `${YIFY}/subtitles/${slug}` },
+    const zip = await fetch(`${YIFY}${zipLink}`, {
+      headers: { "User-Agent": UA, Referer: subPage },
       signal: AbortSignal.timeout(20_000),
     });
     if (!zip.ok) return null;

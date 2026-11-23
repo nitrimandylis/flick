@@ -3,7 +3,7 @@ import { animeMatches, animeQueries, animeTitles, parseAnime, plainTitle } from 
 import { pickSubtitles, pickVideos } from "./engines.ts";
 import { parseArgs } from "./cli.tsx";
 import { playerPage } from "./players.ts";
-import { parseYifyEnglish, srtToVtt } from "./subtitles.ts";
+import { parseYifyEnglish, parseYifyZip, srtToVtt } from "./subtitles.ts";
 import { parseDetails, parseEpisodes, parseSuggestions, parseTitle, sxxeyy } from "./titles.ts";
 import { audioLabel, browserPlayable, hashOf, matchesShow, pickBest, qualityLabel, withTrackers, type Torrent } from "./torrents.ts";
 import { clip, clock, continueRows, downloadLine, resolutionLabel, sinceLabel, trail, firstRow, nextRow, sourceEntries, sourceTag, uploadRate, windowOf } from "./ui.tsx";
@@ -82,6 +82,11 @@ describe("files and subtitles", () => {
   test("yify: the English row's link", () => {
     const html = '<tr><td class="sub-lang">Greek</td><a href="/subtitles/x-greek"></a></tr><tr><td class="sub-lang">English</td><a href="/subtitles/x-english"></a></tr>';
     expect(parseYifyEnglish(html)).toBe("x-english");
+  });
+  test("yify: the zip link, whose name can differ from the page's", () => {
+    const html = '<a class="btn-icon download-subtitle" href="/subtitle/dune-2021-english-yify-364091.zip">';
+    expect(parseYifyZip(html)).toBe("/subtitle/dune-2021-english-yify-364091.zip");
+    expect(parseYifyZip("<p>nothing</p>")).toBe(null);
   });
   test("the browser page only adds a track when there are subtitles", () => {
     expect(playerPage("Film", false)).not.toContain("<track");
