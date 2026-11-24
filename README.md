@@ -116,6 +116,6 @@ flick's list of torrent sources follows the one curated by [torlink](https://git
 
 `THE FILM STARTS WHEN YOU DO`
 
-MIT licensed.
+MIT licensed. The room art (`room/art/`) was generated with FLUX 3 Image Klein under the FLUX Kommunity licence.
 
 </div>

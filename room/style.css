@@ -108,6 +108,23 @@ button { cursor: pointer; }
     var(--void);
 }
 
+/* Screenprint art behind the two waiting screens (room/art/, FLUX 3 Klein).
+   The upscaler smooths the print grain away, so the grain layer puts it back.
+   The radial wash is darkest where the centred text sits. */
+#gate, #empty {
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.07'/%3E%3C/svg%3E");
+  --wash: radial-gradient(55% 45% at 50% 50%, rgba(6, 10, 18, 0.72), rgba(6, 10, 18, 0.3) 100%);
+}
+/* The couch fills the lower half, so the gate's content sits up on the wall. */
+#gate {
+  --wash: radial-gradient(60% 40% at 50% 28%, rgba(6, 10, 18, 0.75), rgba(6, 10, 18, 0.2) 100%);
+  place-content: start center;
+  padding-top: 10vh;
+  background: var(--grain), var(--wash), url("/art/couch.webp") center bottom / cover no-repeat, var(--void);
+}
+/* An empty marquee board: literally nothing on yet. */
+#empty { background: var(--grain), var(--wash), url("/art/lobby.webp") center / cover no-repeat, var(--void); }
+
 .panel p { margin: 0; max-width: 34ch; color: var(--mute); }
 .panel .lead { color: var(--ink); font-size: 20px; }
 
@@ -310,6 +327,9 @@ button { cursor: pointer; }
   position: absolute;
   inset: 0 0 auto 0;
   height: 78vh;
+  /* The fallback when Wikidata has no art for the film; room.js sets the
+     film's own image inline over it. */
+  background-image: url("/art/projector.webp");
   background-size: cover;
   background-position: center 30%;
   opacity: 0.38;

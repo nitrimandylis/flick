@@ -38,6 +38,7 @@ const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".svg": "image/svg+xml",
   ".woff2": "font/woff2",
+  ".webp": "image/webp",
 };
 
 export function emptyState(): RoomState {
@@ -306,7 +307,7 @@ export class Room {
         return res.end(JSON.stringify(await filmDetails(details[1])));
       }
       // The page's own assets. Anything else (other rooms, guessing) is a 404.
-      if (/^\/(style\.css|room\.js|favicon\.svg|fonts\/[a-z0-9-]+\.woff2)$/.test(path)) return this.file(res, path.slice(1));
+      if (/^\/(style\.css|room\.js|favicon\.svg|fonts\/[a-z0-9-]+\.woff2|art\/[a-z]+\.webp)$/.test(path)) return this.file(res, path.slice(1));
     } catch {
       if (!res.headersSent) res.writeHead(500);
       return res.end();
